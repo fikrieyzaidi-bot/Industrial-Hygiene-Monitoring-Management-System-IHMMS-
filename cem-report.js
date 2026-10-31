@@ -12,21 +12,31 @@ function hazType(name){const s=(name+" "+((DB[param(name).db]||{}).en||"")).toLo
   if(/ammonia|hydrogen sulfide|sulfur dioxide|nitrogen dioxide|nitric oxide|carbon monoxide|carbon dioxide|chlorine|ozone|phosgene|cyanide|hydrogen chloride|hydrogen fluoride/.test(s))return"gas";
   if(/acid|hydroxide/.test(s))return"acid";
   return"solvent"}
+const limOf=g=>`${g.basis} of ${g.lim??"–"} mg/m³`;
+const rangeTxt=x=>x.done.length>1?(x.lo.basis===x.worst.basis?`ranged from ${twaTxt(x.lo)} to ${twaTxt(x.worst)} mg/m³ (${pctG(x.lo)}–${pctG(x.worst)} of the ${limOf(x.worst)})`
+  :`ranged from ${twaTxt(x.lo)} mg/m³ (${pctG(x.lo)} of the ${limOf(x.lo)}) to ${twaTxt(x.worst)} mg/m³ (${pctG(x.worst)} of the ${limOf(x.worst)})`):`was ${twaTxt(x.worst)} mg/m³ (${pctG(x.worst)} of the ${limOf(x.worst)})`;
+const shortNote=a=>a.shortG.length?`${a.shortG.length===a.G.filter(g=>g.complete).length?"All samples were":`Samples for ${list(a.shortG.map(g=>`${g.worker} (${g.point}) – ${g.param}, ${f(g.sumT,0)} min`))} were`} collected over less than 60 minutes; these results are therefore reported as short-term exposure (average concentration over the sampling time) and compared with the Maximum Exposure Limit (MEL = 3 × PEL) of USECHH 2000 instead of the 8-hour TWA PEL.`:"";
+/* when short-duration (<60 min) samples are present, refer to the MEL / applicable limit instead of the PEL in generic wording */
+function limWords(s,a){if(a.L==="PEL")return s;const L=a.L;
+  return s.replace(/Permissible Exposure Limit \(PEL\)/g,L==="MEL"?"Maximum Exposure Limit (MEL)":"applicable exposure limit (PEL, or MEL for samples under 60 minutes)")
+    .replace(/(half \(50%\) of|half of|10% of|exceeded|exceed|below|above|of) the (applicable )?PEL\b(?! of [\d<–-])/g,`$1 the ${L}`)
+    .replace(/times the PEL/g,`times the ${L}`)}
 const CAT={over:"exceeded the PEL",half:"exceeded half (50%) of the PEL",ten:"exceeded 10% of the PEL",low:"below 10% of the PEL"};
 function analyse(){
   const I=st.info,C=st.ctl,G=groups().filter(g=>g.point!=="Blank"),client=I.client||"the client";
   G.forEach(g=>{g.cat=g.pct==null?null:g.lt?"nd":g.pct>=100?"over":g.pct>=50?"half":g.pct>=10?"ten":"low";g.ratio=g.pct==null?null:g.pct/100;g.task=(st.points[g.point]||{}).area||"";g.desc=(st.points[g.point]||{}).desc||""});
   const params=[...new Set(G.map(g=>g.param))],pts=[...new Set(G.map(g=>g.point))],n=pts.length;
   const P=params.map(p=>{const gs=G.filter(g=>g.param===p),done=gs.filter(g=>g.twa!=null),pp=param(p);
-    const worst=done.reduce((a,b)=>!a||b.twa>a.twa?b:a,null),best=done.reduce((a,b)=>!a||b.twa<b.twa?b:a,null);
-    const lo=done.reduce((a,b)=>!a||b.twa<a.twa?b:a,null);
+    const k=g=>g.pct!=null?g.pct:g.twa; // rank by % of the applicable limit (PEL, or MEL for short samples)
+    const worst=done.reduce((a,b)=>!a||k(b)>k(a)?b:a,null),lo=done.reduce((a,b)=>!a||k(b)<k(a)?b:a,null);
     const cats=done.map(g=>g.cat),top=["over","half","ten","low","nd"].find(c=>cats.includes(c))||null;
     return{p,gs,done,pel:num(pp.pel),worst,lo,top,haz:hazType(p),skin:!!pp.skin,s2:!!pp.s2,maxRatio:worst&&worst.ratio}});
   const rpe=RPE[C.rpe||""]||RPE[""],apf=rpe[1],need=Math.max(0,...P.map(x=>x.maxRatio||0));
   const worstCat=["over","half","ten","low","nd"].find(c=>P.some(x=>x.top===c))||null;
   const ndHigh=G.filter(g=>g.cat==="nd"&&g.pct>=10);
-  const wl=g=>`Worker ${g.point} (${g.worker}${g.task?", "+g.task:""}) for ${g.param} (${twaTxt(g)} mg/m³, ${pctG(g)} of PEL)`;
-  return{ndHigh,I,C,G,P,client,params,n,wN:n+" worker"+(n===1?"":"s"),area:(I.area||"workplace").toLowerCase(),rpe,apf,need,worstCat,wl,
+  const wl=g=>`Worker ${g.point} (${g.worker}${g.task?", "+g.task:""}) for ${g.param} (${twaTxt(g)} mg/m³, ${pctG(g)} of ${g.basis}${g.short?`, sampled ${f(g.sumT,0)} min`:""})`;
+  const shortG=G.filter(g=>g.short&&g.complete),L=!shortG.length?"PEL":shortG.length===G.filter(g=>g.complete).length?"MEL":"applicable limit";
+  return{ndHigh,shortG,L,I,C,G,P,client,params,n,wN:n+" worker"+(n===1?"":"s"),area:(I.area||"workplace").toLowerCase(),rpe,apf,need,worstCat,wl,
     over:G.filter(g=>g.cat==="over"),half:G.filter(g=>g.cat==="half"),ten:G.filter(g=>g.cat==="ten"),low:G.filter(g=>g.cat==="low"),
     pelList:params.map(p=>`${p} (${param(p).pel??"–"} mg/m³)`),eng:[...C.eng,...(C.engOther?[C.engOther]:[])],adm:[...C.adm,...(C.admOther?[C.admOther]:[])]}}
 function freqLine(a){if(a.over.length)return"Repeat personal exposure monitoring within six (6) months, after the improved controls are in place, to confirm that exposure has been reduced below the PEL.";
@@ -47,7 +57,7 @@ function rpeAdvice(h){return{silica:"a half-face respirator with P3 particulate 
 
 const TEXTS=[
  ["exec","1.0 Executive summary",a=>{
-   const ranges=a.P.filter(x=>x.done.length).map(x=>x.done.length>1?`${x.p} ranged from ${twaTxt(x.lo)} to ${twaTxt(x.worst)} mg/m³ (${pctG(x.lo)}–${pctG(x.worst)} of the PEL of ${x.pel} mg/m³)`:`${x.p} was ${twaTxt(x.worst)} mg/m³ (${pctG(x.worst)} of the PEL of ${x.pel} mg/m³)`);
+   const ranges=a.P.filter(x=>x.done.length).map(x=>`${x.p} ${rangeTxt(x)}`);
    let p4;
    if(a.over.length)p4=`The exposure of ${list(a.over.map(a.wl))} exceeded the Permissible Exposure Limit (PEL). The existing control measures are therefore not adequate for this exposure, and the employer must take immediate action to reduce exposure, review the controls and repeat the monitoring.`;
    else if(a.half.length)p4=`All results were below the PEL. However, ${list(a.half.map(a.wl))} exceeded half (50%) of the PEL, which indicates that the existing controls need to be improved and monitored more closely.`;
@@ -58,17 +68,18 @@ const TEXTS=[
      a.need>=1||((a.over.length||a.half.length)&&(a.C.rpeUse!=="consistent"||a.C.fit!=="yes"))?"ensure suitable respiratory protection is worn consistently, with fit testing":"continue proper use of PPE",
      s2.length?`arrange medical surveillance for workers exposed to ${list(s2)}`:"",freqLine(a).split(",")[0].toLowerCase()].filter(Boolean);
    return `Chemical Exposure Monitoring (CEM) was conducted at ${a.client} by a registered Industrial Hygiene Technician (IHT-1) as recommended in the Chemical Health Risk Assessment (CHRA)${a.I.chraNo?` (Report No.: ${a.I.chraNo})`:""} and in accordance with the Occupational Safety and Health (Use and Standards of Exposure of Chemical Hazardous to Health) Regulations 2000 (USECHH 2000).\n`+
-   `The monitoring assessed the personal exposure of ${a.wN} to ${list(a.params)}${a.C.activities?` during ${lc(a.C.activities.replace(/\.$/,""))}`:` during normal working activities at the ${a.area}`}. Personal air sampling was carried out in the workers’ breathing zone over a full 8-hour (480-minute) work shift, and results were compared against the 8-hour Time-Weighted Average (TWA) PEL in Schedule I of USECHH 2000.\n`+
-   (ranges.length?`The 8-hour TWA exposure for ${ranges.join("; ")}.\n`:"")+p4+`\n`+
+   `The monitoring assessed the personal exposure of ${a.wN} to ${list(a.params)}${a.C.activities?` during ${lc(a.C.activities.replace(/\.$/,""))}`:` during normal working activities at the ${a.area}`}. Personal air sampling was carried out in the workers’ breathing zone ${a.L==="MEL"?"for less than 60 minutes, so results were compared against the Maximum Exposure Limit (MEL = 3 × PEL) of USECHH 2000.":`over a full 8-hour (480-minute) work shift, and results were compared against the 8-hour Time-Weighted Average (TWA) PEL in Schedule I of USECHH 2000.${a.shortG.length?" "+shortNote(a):""}`}\n`+
+   (ranges.length?`The ${a.L==="MEL"?"short-term":a.L==="PEL"?"8-hour TWA":"measured"} exposure for ${ranges.join("; ")}.\n`:"")+p4+`\n`+
    `The key recommendations are to ${list(keys)}. Details are given in Sections 6.0 and 7.0.`}],
  ["intro","2.0 Introduction",a=>`${a.I.consName||"The consultant"} has been appointed to conduct a chemical exposure monitoring program at ${a.client}, which is located at ${a.I.locAddr||"the client's premises"}. This report presents the details of personnel exposure monitoring in order to comply with the USECHH Regulations 2000.`],
  ["seg","4.3 Selection of worker from Similar Exposure Group (SEG)",a=>`Workers selected were those nearest to the source, with the highest duration and frequency of exposure, whose work practice exposed them directly to the chemicals, taking available control measures into account.${a.G.some(g=>g.task)?" The workers monitored were: "+list([...new Set(a.G.map(g=>`${g.worker} (${g.point})${g.task?" – "+g.task:""}${g.desc?" ("+lc(noDot(g.desc))+")":""}`))])+".":""}`],
- ["just","4.4 Justification on monitoring duration and number of samples",a=>`Results are compared with the 8-hour Time Weighted Average limit (PEL-TWA) stated in Schedule I of USECHH 2000: ${list(a.pelList)}. Monitoring used a full-period consecutive samples strategy over the entire 8-hour shift, with the personal sampling pump positioned in the worker’s breathing zone.`],
+ ["just","4.4 Justification on monitoring duration and number of samples",a=>`Results are compared with the 8-hour Time Weighted Average limit (PEL-TWA) stated in Schedule I of USECHH 2000: ${list(a.pelList)}. Monitoring used a full-period consecutive samples strategy over the entire 8-hour shift, with the personal sampling pump positioned in the worker’s breathing zone.${a.shortG.length?" "+shortNote(a):""}`],
  ["d1","6.1 Chemical Exposure Monitoring Results",a=>{
    const out=[`CEM was conducted to assess the personal exposure of ${a.wN} to ${list(a.params)} during normal work activities at ${a.client}. The results are discussed by parameter below, using the following action levels: above the PEL (immediate action), above 50% of the PEL (controls to be improved and monitoring at least every 12 months), above 10% of the PEL (additional sampling under the 2022 Guidelines) and below 10% of the PEL (exposure well controlled).`];
    a.P.forEach(x=>{if(!x.done.length){out.push(`${x.p}: results are incomplete because field data is missing, so no conclusion can be drawn yet.`);return}
      const lt=x.done.filter(g=>g.lt);
-     let s=`${x.p} (PEL ${x.pel} mg/m³${param(x.p).ppm?`, ${param(x.p).ppm} ppm`:""}): `+(x.done.length>1?`exposure ranged from ${twaTxt(x.lo)} to ${twaTxt(x.worst)} mg/m³ (${pctG(x.lo)}–${pctG(x.worst)} of the PEL), with the highest exposure recorded for ${x.worst.worker} (${x.worst.point})${x.worst.task?", "+x.worst.task:""}.`:`exposure was ${twaTxt(x.worst)} mg/m³ (${pctG(x.worst)} of the PEL).`);
+     let s=`${x.p} (PEL ${x.pel} mg/m³${param(x.p).ppm?`, ${param(x.p).ppm} ppm`:""}${x.done.some(g=>g.short)?`; MEL ${mel(param(x.p)).mg} mg/m³`:""}): exposure ${rangeTxt(x)}`+(x.done.length>1?`, with the highest exposure recorded for ${x.worst.worker} (${x.worst.point})${x.worst.task?", "+x.worst.task:""}.`:".");
+     const sh=x.done.filter(g=>g.short);if(sh.length)s+=` ${list(sh.map(g=>g.point))} ${sh.length>1?"were":"was"} sampled for less than 60 minutes, so ${sh.length>1?"these results are":"this result is"} short-term and compared with the MEL (3 × PEL).`;
      const byCat=c=>x.done.filter(g=>g.cat===c).map(g=>`${g.point}`);
      if(x.top==="over")s+=` The result for ${list(byCat("over"))} exceeded the PEL, so the existing controls do not adequately protect the worker${byCat("over").length>1?"s":""} and immediate action is required.`;
      else if(x.top==="half")s+=` Results for ${list(byCat("half"))} were above half of the PEL, which shows that exposure is significant and existing controls should be strengthened.`;
@@ -103,7 +114,7 @@ const TEXTS=[
    else verdict="The adequacy of the existing controls will be assessed once all results are complete.";
    out.push(verdict+(gaps.length?` Gaps noted: ${list(gaps)}.`:""));
    return out.join("\n")}],
- ["d3","6.3 Justification on Sampling Strategy",a=>`Personal air sampling was conducted on ${a.wN} considered representative of the work activities with potential exposure. Sampling over a full 8-hour (480-minute) shift allowed assessment against the 8-hour TWA PEL, and personal sampling in the breathing zone represents the actual exposure during normal work.`],
+ ["d3","6.3 Justification on Sampling Strategy",a=>`Personal air sampling was conducted on ${a.wN} considered representative of the work activities with potential exposure. Sampling over a full 8-hour (480-minute) shift allowed assessment against the 8-hour TWA PEL, and personal sampling in the breathing zone represents the actual exposure during normal work.${a.shortG.length?" "+shortNote(a):""}`],
  ["r1","7.1 Action to Be Taken",a=>{
    const B=[],need=a.P.filter(x=>x.top&&x.top!=="low"&&x.top!=="nd"),fam=h=>({silica:"part",dust:"part",fume:"part"}[h]||h),rank={silica:3,fume:2,dust:1};
    const hz=[];(need.length?need:a.P).forEach(x=>{const i=hz.findIndex(h=>fam(h)===fam(x.haz));if(i<0)hz.push(x.haz);else if((rank[x.haz]||0)>(rank[hz[i]]||0))hz[i]=x.haz});
@@ -128,7 +139,7 @@ const TEXTS=[
      :`The monitoring results showed that the concentrations of ${list(a.params.map(p=>p.toLowerCase()))} during monitoring were below the PEL stipulated in Schedule I of the USECHH Regulations 2000, indicating that the existing control measures were generally adequate in controlling workers’ exposure during the monitoring period.`+(a.ten.length?" However, selected results were above 10% of the applicable PEL. Therefore, six (6) additional personal exposure samples are recommended in accordance with the applicable DOSH guidelines to further assess the workers’ exposure profile and confirm compliance.":"");
    return s+`\nRecommendations as described in Section 7.0 were made in order to comply with the USECHH Regulations 2000. The objectives of the exposure monitoring conducted at ${a.client} have been fulfilled.`}]];
 const dd=s=>String(s).replace(/(^|[^.])\.\.(?!\.)/g,"$1.");
-const textOf=k=>{const t=TEXTS.find(x=>x[0]===k);return st.text[k]!=null?st.text[k]:dd(t[2](analyse()))};
+const textOf=k=>{const t=TEXTS.find(x=>x[0]===k);if(st.text[k]!=null)return st.text[k];const a=analyse();return dd(limWords(t[2](a),a))};
 function renderTexts(softly){
   if(softly){TEXTS.forEach(([k])=>{const el=$(`[data-tx="${k}"]`);if(el&&st.text[k]==null&&document.activeElement!==el)el.value=textOf(k)});return}
   $("#texts").innerHTML=TEXTS.map(([k,t])=>`<div class="tx"><div class="row"><label style="margin:0;font-weight:600;color:var(--ink)">${t}</label><button class="sm noP" data-txr="${k}">Rewrite</button></div><textarea data-tx="${k}"></textarea></div>`).join("");
@@ -157,9 +168,9 @@ function model(){
   const nPts=new Set(GR.map(g=>g.point)).size;
   T("Table 5:","List of work area and number of workers monitored",["Area","Chemical","Work specification","Exposed / monitored"],[[I.area||"-",params.join(", "),I.workSpec||"",`${I.exposed||nPts} / ${nPts}`]],[.14,.5,.18,.18]);
   B.push({t:"h2",x:"5.2 Monitoring Result"});
-  T("Table 6:",`Summary of result analysis — ${I.area||"Workplace"}`,["Name (Sample No)","Parameter","Sampling Duration","Exposure Level (mg/m³)","PEL 8-hr TWA mg/m³ (ppm)","% PEL","Remarks"],
-    GR.map(g=>[`${g.worker} (${g.point})`,g.param,`${f(g.sumT,0)} min`,twaTxt(g),String(g.pel??"-")+(param(g.param).ppm?` (${param(g.param).ppm} ppm)`:""),g.pct==null?"-":pctG(g),remark(g)]),[.17,.2,.11,.13,.12,.09,.18],{bold:3});
-  B.push({t:"p",x:"Results are expressed as 8-hour time weighted average airborne concentration. “<” = below the minimum detectable limit of the analysis. ND = not detectable. PEL = Permissible Exposure Limit, Schedule I, USECHH Regulations 2000.",s:9.5});
+  T("Table 6:",`Summary of result analysis — ${I.area||"Workplace"}`,["Name (Sample No)","Parameter","Sampling Duration","Exposure Level (mg/m³)",GR.some(g=>g.short)?"PEL 8-hr TWA / MEL mg/m³ (ppm)":"PEL 8-hr TWA mg/m³ (ppm)",GR.some(g=>g.short)?"% of limit":"% PEL","Remarks"],
+    GR.map(g=>[`${g.worker} (${g.point})`,g.param,`${f(g.sumT,0)} min`,twaTxt(g),g.short?`${g.lim??"-"}${mel(param(g.param)).ppm!=null?` (${mel(param(g.param)).ppm} ppm)`:""} MEL`:String(g.pel??"-")+(param(g.param).ppm?` (${param(g.param).ppm} ppm)`:""),g.pct==null?"-":pctG(g),remark(g)]),[.17,.2,.11,.13,.12,.09,.18],{bold:3});
+  B.push({t:"p",x:"Results are expressed as 8-hour time weighted average airborne concentration"+(GR.some(g=>g.short)?", except samples with a total duration under 60 minutes, which are expressed as the average concentration over the sampling time and compared with the MEL":"")+". “<” = below the minimum detectable limit of the analysis. ND = not detectable. PEL = Permissible Exposure Limit, Schedule I, USECHH Regulations 2000."+(GR.some(g=>g.short)?" MEL = Maximum Exposure Limit = 3 × PEL (USECHH 2000).":""),s:9.5});
   B.push({t:"h1",x:"6.0 DISCUSSION",page:1});
   [["d1","6.1 Chemical Exposure Monitoring Results"],["d2","6.2 Factors Contributing Towards the Results and Adequacy of Existing Control Measures"],["d3","6.3 Justification on Sampling Strategy"]].forEach(([k,t])=>{B.push({t:"h2",x:t});B.push({t:"p",x:textOf(k)})});
   B.push({t:"h1",x:"7.0 RECOMMENDATION",page:1});B.push({t:"p",x:"The following points should be considered to comply with the Occupational Safety and Health Act (OSHA) 1994 and USECHH Regulations 2000."});
@@ -167,7 +178,7 @@ function model(){
   B.push({t:"h2",x:"7.2 Record Keeping"});B.push({t:"p",x:"Under Regulation 26(4), records of monitoring shall be kept for at least 30 years where representative of personal exposure, and at least 5 years in any other case (e.g. area monitoring)."});
   B.push({t:"h2",x:"7.3 Regulations Compliance"});B.push({t:"p",x:"The employer should keep exposure to chemical hazards at the lowest practicable level and below the permissible exposure limits."});
   B.push({t:"h2",x:"7.4 Necessity of further monitoring"});B.push({t:"table",head:["Exposure Result","Frequency of monitoring"],rows:[["Above the permissible exposure limit","Not more than six (6) months"],["Above half of the eight-hour TWA but below the eight-hour TWA","Not more than twelve (12) months"]],w:[.6,.4]});
-  B.push({t:"p",x:"Based on this monitoring: "+freqLine(a)});
+  B.push({t:"p",x:"Based on this monitoring: "+limWords(freqLine(a),a)});
   B.push({t:"h2",x:"7.5 Necessity to review the control measures according to the regulations"});
   B.push({t:"p",x:"1. If any of the initial three (3) samples exceed the PEL, the employer must review and improve existing control measures before proceeding with additional monitoring.\n2. If the compliance test fails after statistical analysis, the employer must immediately review engineering controls, work practices, administrative controls and PPE, and implement improvements.",tight:1});
   B.push({t:"h2",x:"7.6 Frequency of Monitoring"});B.push({t:"p",x:"The management is advised to communicate the CEM results to the CHRA assessor to determine the necessity for further monitoring. Air monitoring may be discontinued if at least two consecutive measurements taken at least seven days apart show exposures below half of the eight-hour TWA, the maximum exposure limit/STEL, or the ceiling limit."});
@@ -180,7 +191,8 @@ function model(){
         rows:g.rows.map(({r,c})=>[r.sample||"-",r.period||"-",f(num(r.fc),4),f(num(r.t),0),f(c.TcK,1),String(st.env.Pc??""),f(c.TK,1),String(st.env.P??""),String(r.mass||"-"),f(c.Vm,1),f(c.Vs,1),c.Ci==null?"-":(c.lt?"<":"")+f(c.Ci,3)]),
         w:[.075,.105,.08,.065,.075,.06,.075,.06,.08,.08,.08,.165],s:8,after:2});
       B.push({t:"mono",x:"Vm = fc × t × √(Pc×T / P×Tc); Vs = Vm × (P/760) × (298/T); Ci = M / Vs"});
-      B.push({t:"twa",x:g.complete?`TWA₈ = [${g.rows.map(({r,c})=>`(${f(c.Ci,3)} × ${f(num(r.t),0)})`).join(" + ")}] / ${f(g.div,0)} = `:"TWA₈ = incomplete field data",b:g.complete?`${twaTxt(g)} mg/m³`:""})});
+      B.push({t:"twa",x:g.complete?`${g.short?"C (short-term)":"TWA₈"} = [${g.rows.map(({r,c})=>`(${f(c.Ci,3)} × ${f(num(r.t),0)})`).join(" + ")}] / ${f(g.div,0)} = `:"TWA₈ = incomplete field data",b:g.complete?`${twaTxt(g)} mg/m³`:""});
+      if(g.short&&g.complete)B.push({t:"p",x:`Sampling duration ${f(g.sumT,0)} min (< 60 min): result compared with MEL = 3 × PEL = ${g.lim??"–"} mg/m³ (${pctG(g)} of MEL).`,s:9})});
   });
   return B}
 
@@ -363,7 +375,7 @@ $("#bPrint").onclick=()=>window.print();
 $("#bXls").onclick=()=>{if(!window.XLSX)return toast("Excel library didn't load");const wb=XLSX.utils.book_new(),G=groups();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(Object.entries(st.info).filter(([k])=>k!=="logoName").map(([k,v])=>({Field:k,Value:v}))),"Report info");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(st.rows.map(r=>{const c=calc(r);return{Point:r.point,Worker:worker(r.point),Parameter:r.param,"Sample ID":r.sample,"Period (hrs)":r.period,"fc (L/min)":r.fc,"t (min)":r.t,"Tc (°C)":st.env.Tc,"Pc (mmHg)":st.env.Pc,"T (°C)":st.env.T,"P (mmHg)":st.env.P,"Mass (µg)":r.mass,"Vm (L)":c.Vm&&+c.Vm.toFixed(2),"Vs (L)":c.Vs&&+c.Vs.toFixed(2),"Ci (mg/m³)":c.Ci&&+c.Ci.toFixed(4)}})),"Calculation");
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(G.map(g=>({Worker:g.worker,Point:g.point,Parameter:g.param,"Duration (min)":g.sumT,"TWA8 (mg/m³)":twaTxt(g),"PEL (mg/m³)":g.pel,"% PEL":g.pct&&+g.pct.toFixed(1),Remarks:remark(g)}))),"Summary");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(G.map(g=>({Worker:g.worker,Point:g.point,Parameter:g.param,"Duration (min)":g.sumT,"Result (mg/m³)":twaTxt(g),"Basis":g.short?"Short-term (<60 min) vs MEL":"8-hr TWA vs PEL","PEL (mg/m³)":g.pel,"Limit used (mg/m³)":g.lim,"% of limit":g.pct&&+g.pct.toFixed(1),Remarks:remark(g)}))),"Summary");
   XLSX.writeFile(wb,`CEM-${st.info.reportNo||"report"}.xlsx`)};
 
 /* ---------------- save to dashboard (IH job register) ---------------- */
@@ -382,14 +394,14 @@ function dashJobs(){
     const jid=st.jobId&&ix===0?st.jobId:`${base}-${slug(x.p)}`;
     return{id:jid,reportId:st.reportId,title:`CEM – ${x.p} (${I.area||"workplace"})`,reportNo:I.reportNo||"",location:I.locName||I.client||"",category:cat,pic,
       priority:top==="over"?"Critical":top==="half"?"High":"Normal",status,requestDate:$("#svReq").value||date,deadline:date,
-      result:+w.twa.toFixed(3),unit:"mg/m³",nab:x.pel,recur,nextAction:next,
-      notes:`From CEM Calculator. Highest: ${w.worker} (${w.point}) ${twaTxt(w)} mg/m³ = ${pctG(w)} of PEL.${w.lt?" Result below detection limit (upper bound).":""} All points: ${pts}. Client: ${I.client||"-"}.`,
+      result:+w.twa.toFixed(3),unit:"mg/m³",nab:w.lim??x.pel,recur,nextAction:next.replace("below PEL","below "+w.basis),
+      notes:`From CEM Calculator. Highest: ${w.worker} (${w.point}) ${twaTxt(w)} mg/m³ = ${pctG(w)} of ${w.basis}${w.short?` (short-term, ${f(w.sumT,0)} min; MEL = 3 × PEL)`:""}.${w.lt?" Result below detection limit (upper bound).":""} All points: ${pts}. Client: ${I.client||"-"}.`,
       checklist:status==="Completed"?{sampling:true,lab:true,draft:true,review:true}:{sampling:true,lab:true,draft:status==="Reporting"},
       seriesId:jid,cycle:1,controls:[],completedAt:status==="Completed"?date:null,source:"cem",_top:top,_pct:w.pct,_lt:w.lt}})}
 function renderSavePreview(){if(!$("#svPrev"))return;
   if(!$("#svDate").value)$("#svDate").value=isoD(new Date());if(!$("#svPic").value)$("#svPic").value=st.info.htName||"";
   const J=dashJobs();
-  $("#svPrev").innerHTML=J.length?`<tr><th>Dashboard job</th><th>Location</th><th>Highest TWA (mg/m³)</th><th>PEL</th><th>% PEL</th><th>Priority</th><th>Next monitoring</th><th>Next action</th></tr>`+J.map(j=>`<tr><td>${esc(j.title)}</td><td>${esc(j.location)||'<span class="pill p-over">set Location name</span>'}</td><td class="n">${j._lt?"<":""}${j.result}</td><td class="n">${j.nab??"–"}</td><td class="n">${j._lt?"<":""}${j._pct==null?"–":j._pct.toFixed(1)}</td><td><span class="pill ${j.priority==="Critical"?"p-over":j.priority==="High"?"p-warn":""}">${j.priority}</span></td><td>${j.recur?`${j.recur} months (${addM($("#svDate").value,j.recur)})`:"as per CHRA"}</td><td style="white-space:normal;font-size:12px;min-width:220px">${esc(j.nextAction)}</td></tr>`).join("")
+  $("#svPrev").innerHTML=J.length?`<tr><th>Dashboard job</th><th>Location</th><th>Highest result (mg/m³)</th><th>Limit (PEL/MEL)</th><th>% of limit</th><th>Priority</th><th>Next monitoring</th><th>Next action</th></tr>`+J.map(j=>`<tr><td>${esc(j.title)}</td><td>${esc(j.location)||'<span class="pill p-over">set Location name</span>'}</td><td class="n">${j._lt?"<":""}${j.result}</td><td class="n">${j.nab??"–"}</td><td class="n">${j._lt?"<":""}${j._pct==null?"–":j._pct.toFixed(1)}</td><td><span class="pill ${j.priority==="Critical"?"p-over":j.priority==="High"?"p-warn":""}">${j.priority}</span></td><td>${j.recur?`${j.recur} months (${addM($("#svDate").value,j.recur)})`:"as per CHRA"}</td><td style="white-space:normal;font-size:12px;min-width:220px">${esc(j.nextAction)}</td></tr>`).join("")
     :`<tr><td class="muted">Complete the sample and field data first. Jobs are created for chemicals with a calculated TWA.</td></tr>`}
 ["#svStatus","#svDate","#svPic","#svReq"].forEach(s=>$(s)&&($(s).onchange=renderSavePreview));
 $("#bSave").onclick=async()=>{

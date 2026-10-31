@@ -123,14 +123,18 @@ function groups(){
   return [...g.values()].sort((a,b)=>((order.indexOf(a.param)+1||99)-(order.indexOf(b.param)+1||99))||ptSort(a.point,b.point)).map(G=>{
     const ok=G.rows.filter(x=>x.c.Ci!=null),complete=ok.length===G.rows.length&&ok.length>0;
     const sumT=G.rows.reduce((a,x)=>a+(num(x.r.t)||0),0),sumCt=ok.reduce((a,x)=>a+x.c.Ci*num(x.r.t),0);
-    const div=st.divTotal?sumT:480,twa=complete&&div>0?sumCt/div:null,lt=complete&&G.rows.every(x=>x.c.lt);
-    const pel=num(param(G.param).pel),pct=twa!=null&&pel?twa/pel*100:null;
-    return{...G,worker:worker(G.point),sumT,sumCt,div,twa,lt,pel,pct,complete}});
+    // USECHH 2000: a sample taken over less than 60 minutes is a short-term result, compared with the MEL (3 × PEL)
+    const short=sumT>0&&sumT<60;
+    const div=short?sumT:st.divTotal?sumT:480,twa=complete&&div>0?sumCt/div:null,lt=complete&&G.rows.every(x=>x.c.lt);
+    const pel=num(param(G.param).pel),lim=short?mel(param(G.param)).mg:pel,basis=short?"MEL":"PEL",pct=twa!=null&&lim?twa/lim*100:null;
+    return{...G,worker:worker(G.point),sumT,sumCt,div,twa,lt,pel,lim,basis,short,pct,complete}});
 }
 const f=(v,d=3)=>v==null||!isFinite(v)?"–":(+v).toFixed(d);
 const twaTxt=g=>g.twa==null?"–":(g.lt?"<":"")+f(g.twa,3);
 const cls=p=>p==null?"":p>=100?"over":p>=50?"warn":"safe";
-const remark=g=>g.pct==null?"–":g.lt?"Below detection limit":g.pct>=100?"Exceeds PEL":g.pct>=50?"Above 50% PEL":g.pct>=10?"Above 10% PEL":"Below 10% PEL";
+const remark=g=>{const b=g.basis||"PEL";return g.pct==null?"–":g.lt?"Below detection limit":g.pct>=100?"Exceeds "+b:g.pct>=50?"Above 50% "+b:g.pct>=10?"Above 10% "+b:"Below 10% "+b};
+const twaLbl=g=>g.short?"C (short-term, < 60 min)":"TWA₈";
+const limCell=g=>g.lim==null?null:g.short?`${g.lim} (MEL)`:String(g.lim);
 
 /* ---------------- UI: info + controls ---------------- */
 let compT;
@@ -205,7 +209,7 @@ function renderRows(){renderPoints();renderEnv();
       ${idx.map(i=>{const r=st.rows[i],nd=/^</.test(String(r.mass||""));return`<tr><td><input data-r="${i}" data-k="sample" value="${esc(r.sample)}"></td><td><input data-r="${i}" data-k="period" value="${esc(r.period)}"></td>
        <td><input data-r="${i}" data-k="t" inputmode="decimal" value="${esc(r.t)}" style="min-width:70px"></td><td><input data-r="${i}" data-k="mass" inputmode="decimal" value="${esc(String(r.mass??"").replace(/^<\s*/,""))}" style="min-width:80px"></td>
        <td><input type="checkbox" data-nd="${i}" ${nd?"checked":""} title="Below detection limit (result shown as “<”)"></td><td class="n" data-ci="${i}">${ciCell(r)}</td><td class="noP"><button class="sm" data-del="${i}" title="Delete row">✕</button></td></tr>`}).join("")}</table></div>
-     <div class="res">${g&&g.twa!=null?`TWA₈ <b>${twaTxt(g)} mg/m³</b> · ${g.pct==null?"set PEL":`<span class="pill p-${g.lt?"safe":cls(g.pct)}">${g.lt?"<":""}${f(g.pct,1)}% PEL · ${remark(g)}</span>`}`:'<span class="muted">TWA₈ appears when flow, duration and mass are filled in.</span>'}</div>
+     <div class="res">${g&&g.twa!=null?`${twaLbl(g)} <b>${twaTxt(g)} mg/m³</b> · ${g.pct==null?"set PEL":`<span class="pill p-${g.lt?"safe":cls(g.pct)}">${g.lt?"<":""}${f(g.pct,1)}% ${g.basis}${g.short?` (MEL = 3 × PEL = ${g.lim} mg/m³)`:""} · ${remark(g)}</span>`}`:'<span class="muted">TWA₈ appears when flow, duration and mass are filled in.</span>'}</div>
      <details class="noP"><summary>Paste from lab CoA</summary><p class="muted" style="font-size:12px;margin:6px 0">One sample per line: sample no. and mass (µg), e.g. <code>MCE546 0.52</code> or <code>MCE547 &lt;0.05</code>. Copy straight from the CoA or Excel.</p>
       <textarea data-paste="${gi}"></textarea><button class="sm" data-pasteok="${gi}" style="margin-top:6px">Fill samples</button></details>
      <div class="row noP" style="margin-top:10px"><button data-addrow="${gi}">+ Sample row</button><button data-delg="${gi}">Delete group</button></div>
@@ -236,15 +240,15 @@ $("#divTotal").onchange=e=>{st.divTotal=e.target.checked;save();renderOut();rend
 
 /* ---------------- UI: calc + summary ---------------- */
 function twaExpr(g){if(!g.complete)return"TWA₈: enter fc, t, temperatures, pressures and mass for every sample.";
-  return `TWA₈ = [${g.rows.map(({r,c})=>`(${f(c.Ci,3)} × ${f(num(r.t),0)})`).join(" + ")}] / ${f(g.div,0)} = <b>${twaTxt(g)} mg/m³</b>`}
+  return `${g.short?"C (short-term)":"TWA₈"} = [${g.rows.map(({r,c})=>`(${f(c.Ci,3)} × ${f(num(r.t),0)})`).join(" + ")}] / ${f(g.div,0)} = <b>${twaTxt(g)} mg/m³</b>${g.short?` — sampled ${f(g.sumT,0)} min (< 60 min), so compared with MEL ${g.lim??"–"} mg/m³`:""}`}
 function renderOut(){
   const G=groups();$("#divLbl").textContent=st.divTotal?"Σt (total sampling duration)":"480";
   $("#calc").innerHTML=G.length?G.map(g=>`<div style="margin-bottom:14px"><div style="font-size:13px;margin-bottom:4px"><b>${esc(st.info.client||"Client")}</b> — Point: ${esc(g.point)} — Parameter: ${esc(g.param)} — ${esc(g.worker)}</div>
    <div class="ts"><table><tr><th>Sample</th><th>Period (hrs)</th><th>fc (L/min)</th><th>t (min)</th><th>Tc (K)</th><th>Pc</th><th>T (K)</th><th>P</th><th>M (µg)</th><th>Vm (L)</th><th>Vs (L)</th><th>Ci (mg/m³)</th></tr>
    ${g.rows.map(({r,c})=>`<tr><td>${esc(r.sample)||"–"}</td><td>${esc(r.period)||"–"}</td><td class="n">${f(num(r.fc),4)}</td><td class="n">${f(num(r.t),0)}</td><td class="n">${f(c.TcK,1)}</td><td class="n">${esc(r.Pc)}</td><td class="n">${f(c.TK,1)}</td><td class="n">${esc(r.P)}</td><td class="n">${esc(r.mass)||"–"}</td><td class="n">${f(c.Vm,1)}</td><td class="n">${f(c.Vs,1)}</td><td class="n">${c.Ci==null?"–":(c.lt?"<":"")+f(c.Ci,3)}</td></tr>`).join("")}</table></div>
    <div class="muted" style="font-size:12.5px;margin-top:4px">${twaExpr(g)}</div></div>`).join(""):'<p class="muted">–</p>';
-  $("#tSum").innerHTML=`<tr><th>Name (Sample No)</th><th>Parameter</th><th>Sampling duration</th><th>Exposure level (mg/m³)</th><th>PEL 8-hr TWA (mg/m³)</th><th>% PEL</th><th>Remarks</th></tr>`+
-   (G.length?G.map(g=>`<tr><td>${esc(g.worker)} (${esc(g.point)})</td><td>${esc(g.param)}</td><td>${f(g.sumT,0)} min</td><td class="n"><b>${twaTxt(g)}</b></td><td class="n">${g.pel??'<span class="pill p-over">set PEL</span>'}</td><td class="n">${g.pct==null?"–":(g.lt?"<":"")+f(g.pct,1)}</td><td>${g.pct==null?(g.complete?"–":'<span class="muted">incomplete field data</span>'):`<span class="pill p-${g.lt?"safe":cls(g.pct)}">${remark(g)}</span>`}</td></tr>`).join(""):`<tr><td colspan="7" class="muted">–</td></tr>`);
+  $("#tSum").innerHTML=`<tr><th>Name (Sample No)</th><th>Parameter</th><th>Sampling duration</th><th>Exposure level (mg/m³)</th><th>PEL 8-hr TWA / MEL (mg/m³)</th><th>% of limit</th><th>Remarks</th></tr>`+
+   (G.length?G.map(g=>`<tr><td>${esc(g.worker)} (${esc(g.point)})</td><td>${esc(g.param)}</td><td>${f(g.sumT,0)} min</td><td class="n"><b>${twaTxt(g)}</b></td><td class="n">${limCell(g)??'<span class="pill p-over">set PEL</span>'}</td><td class="n">${g.pct==null?"–":(g.lt?"<":"")+f(g.pct,1)}</td><td>${g.pct==null?(g.complete?"–":'<span class="muted">incomplete field data</span>'):`<span class="pill p-${g.lt?"safe":cls(g.pct)}">${remark(g)}</span>`}</td></tr>`).join(""):`<tr><td colspan="7" class="muted">–</td></tr>`);
   renderReadiness();
 }
 
