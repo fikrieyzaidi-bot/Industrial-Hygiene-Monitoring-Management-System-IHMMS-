@@ -15,7 +15,7 @@ function hazType(name){const s=(name+" "+((DB[param(name).db]||{}).en||"")).toLo
 const CAT={over:"exceeded the PEL",half:"exceeded half (50%) of the PEL",ten:"exceeded 10% of the PEL",low:"below 10% of the PEL"};
 function analyse(){
   const I=st.info,C=st.ctl,G=groups().filter(g=>g.point!=="Blank"),client=I.client||"the client";
-  G.forEach(g=>{g.cat=g.pct==null?null:g.lt?"nd":g.pct>=100?"over":g.pct>=50?"half":g.pct>=10?"ten":"low";g.ratio=g.pct==null?null:g.pct/100;g.task=(st.points[g.point]||{}).task||""});
+  G.forEach(g=>{g.cat=g.pct==null?null:g.lt?"nd":g.pct>=100?"over":g.pct>=50?"half":g.pct>=10?"ten":"low";g.ratio=g.pct==null?null:g.pct/100;g.task=(st.points[g.point]||{}).area||"";g.desc=(st.points[g.point]||{}).desc||""});
   const params=[...new Set(G.map(g=>g.param))],pts=[...new Set(G.map(g=>g.point))],n=pts.length;
   const P=params.map(p=>{const gs=G.filter(g=>g.param===p),done=gs.filter(g=>g.twa!=null),pp=param(p);
     const worst=done.reduce((a,b)=>!a||b.twa>a.twa?b:a,null),best=done.reduce((a,b)=>!a||b.twa<b.twa?b:a,null);
@@ -62,7 +62,7 @@ const TEXTS=[
    (ranges.length?`The 8-hour TWA exposure for ${ranges.join("; ")}.\n`:"")+p4+`\n`+
    `The key recommendations are to ${list(keys)}. Details are given in Sections 6.0 and 7.0.`}],
  ["intro","2.0 Introduction",a=>`${a.I.consName||"The consultant"} has been appointed to conduct a chemical exposure monitoring program at ${a.client}, which is located at ${a.I.locAddr||"the client's premises"}. This report presents the details of personnel exposure monitoring in order to comply with the USECHH Regulations 2000.`],
- ["seg","4.3 Selection of worker from Similar Exposure Group (SEG)",a=>`Workers selected were those nearest to the source, with the highest duration and frequency of exposure, whose work practice exposed them directly to the chemicals, taking available control measures into account.${a.G.some(g=>g.task)?" The workers monitored were: "+list([...new Set(a.G.map(g=>`${g.worker} (${g.point})${g.task?" – "+g.task:""}`))])+".":""}`],
+ ["seg","4.3 Selection of worker from Similar Exposure Group (SEG)",a=>`Workers selected were those nearest to the source, with the highest duration and frequency of exposure, whose work practice exposed them directly to the chemicals, taking available control measures into account.${a.G.some(g=>g.task)?" The workers monitored were: "+list([...new Set(a.G.map(g=>`${g.worker} (${g.point})${g.task?" – "+g.task:""}${g.desc?" ("+lc(noDot(g.desc))+")":""}`))])+".":""}`],
  ["just","4.4 Justification on monitoring duration and number of samples",a=>`Results are compared with the 8-hour Time Weighted Average limit (PEL-TWA) stated in Schedule I of USECHH 2000: ${list(a.pelList)}. Monitoring used a full-period consecutive samples strategy over the entire 8-hour shift, with the personal sampling pump positioned in the worker’s breathing zone.`],
  ["d1","6.1 Chemical Exposure Monitoring Results",a=>{
    const out=[`CEM was conducted to assess the personal exposure of ${a.wN} to ${list(a.params)} during normal work activities at ${a.client}. The results are discussed by parameter below, using the following action levels: above the PEL (immediate action), above 50% of the PEL (controls to be improved and monitoring at least every 12 months), above 10% of the PEL (additional sampling under the 2022 Guidelines) and below 10% of the PEL (exposure well controlled).`];
@@ -149,16 +149,16 @@ function model(){
   T("Table 2:","Particulars of registered Hygiene Technician 1",["Name","JKKP Registration No."],[[I.htName||"-",I.htReg||"-"]],[.5,.5]);
   B.push({t:"h1",x:"3.0 OBJECTIVES",page:1});B.push({t:"p",x:"The objectives of this chemical exposure monitoring are:\n(a) To measure concentration of chemicals hazardous to health at the identified work area.\n(b) To measure workers’ exposure levels to these chemicals at the identified work area.\n(c) To compare results of monitoring with the Permissible Exposure Limit stipulated under Schedule I of the USECHH Regulations 2000.\n(d) To recommend action to be taken based on the results of this monitoring in order to comply with the USECHH Regulations 2000.",tight:1});
   B.push({t:"h1",x:"4.0 METHODOLOGY",page:1});B.push({t:"h2",x:"4.1 Method Used"});
-  T("Table 3:","List of chemical, method, sampling media and analytical technique",["Chemical","Method","Sampling Media"],params.map(p=>[p,param(p).method||"-",param(p).media||"-"]),[.24,.33,.43]);
-  B.push({t:"h2",x:"4.2 Equipment Used"});T("Table 4:","List and details of equipment and sampling media",["Equipment / media"],(I.equipment||"-").split("\n").filter(l=>l.trim()).map(l=>[l]),[1]);
+  T("Table 3:","List of chemical, method, sampling media and analytical technique",["Chemical","Method","Sampling Media","PEL TWA8","MEL (3 × PEL)"],params.map(p=>{const q=param(p);return[p,q.method||"-",q.media||"-",[q.ppm!==""&&q.ppm!=null?q.ppm+" ppm":"",q.pel!==""&&q.pel!=null?q.pel+" mg/m³":""].filter(Boolean).join(" / ")||"-",melText(q)]}),[.18,.22,.28,.16,.16]);
+  B.push({t:"h2",x:"4.2 Equipment Used"});B.push({t:"cap",b:"Table 4:",x:"List and details of equipment and sampling media"});B.push({t:"equip"});
   B.push({t:"h2",x:"4.3 Selection of worker from Similar Exposure Group (SEG)"});B.push({t:"p",x:textOf("seg")});
   B.push({t:"h2",x:"4.4 Justification on monitoring duration and number of samples"});B.push({t:"p",x:textOf("just")});
   B.push({t:"h1",x:"5.0 RESULTS & FINDINGS",page:1});B.push({t:"h2",x:"5.1 Monitoring Area Information"});
   const nPts=new Set(GR.map(g=>g.point)).size;
   T("Table 5:","List of work area and number of workers monitored",["Area","Chemical","Work specification","Exposed / monitored"],[[I.area||"-",params.join(", "),I.workSpec||"",`${I.exposed||nPts} / ${nPts}`]],[.14,.5,.18,.18]);
   B.push({t:"h2",x:"5.2 Monitoring Result"});
-  T("Table 6:",`Summary of result analysis — ${I.area||"Workplace"}`,["Name (Sample No)","Parameter","Sampling Duration","Exposure Level (mg/m³)","PEL 8-hr TWA (mg/m³)","% PEL","Remarks"],
-    GR.map(g=>[`${g.worker} (${g.point})`,g.param,`${f(g.sumT,0)} min`,twaTxt(g),String(g.pel??"-"),g.pct==null?"-":pctG(g),remark(g)]),[.17,.2,.11,.13,.12,.09,.18],{bold:3});
+  T("Table 6:",`Summary of result analysis — ${I.area||"Workplace"}`,["Name (Sample No)","Parameter","Sampling Duration","Exposure Level (mg/m³)","PEL 8-hr TWA mg/m³ (ppm)","% PEL","Remarks"],
+    GR.map(g=>[`${g.worker} (${g.point})`,g.param,`${f(g.sumT,0)} min`,twaTxt(g),String(g.pel??"-")+(param(g.param).ppm?` (${param(g.param).ppm} ppm)`:""),g.pct==null?"-":pctG(g),remark(g)]),[.17,.2,.11,.13,.12,.09,.18],{bold:3});
   B.push({t:"p",x:"Results are expressed as 8-hour time weighted average airborne concentration. “<” = below the minimum detectable limit of the analysis. ND = not detectable. PEL = Permissible Exposure Limit, Schedule I, USECHH Regulations 2000.",s:9.5});
   B.push({t:"h1",x:"6.0 DISCUSSION",page:1});
   [["d1","6.1 Chemical Exposure Monitoring Results"],["d2","6.2 Factors Contributing Towards the Results and Adequacy of Existing Control Measures"],["d3","6.3 Justification on Sampling Strategy"]].forEach(([k,t])=>{B.push({t:"h2",x:t});B.push({t:"p",x:textOf(k)})});
@@ -177,7 +177,7 @@ function model(){
     B.push({t:"h1",x:"APPENDIX F: DATA AND CALCULATION FORM",page:1});
     GR.forEach(g=>{B.push({t:"rich",parts:[[client,1],[` — Point: ${g.point} — Parameter: ${g.param} — ${g.worker}`,0]],keep:1});
       B.push({t:"table",head:["Sample","Period (hrs)","fc (L/min)","t (min)","Tc (K)","Pc","T (K)","P","M (µg)","Vm (L)","Vs (L)","Ci (mg/m³)"],
-        rows:g.rows.map(({r,c})=>[r.sample||"-",r.period||"-",f(num(r.fc),4),f(num(r.t),0),f(c.TcK,1),String(r.Pc??""),f(c.TK,1),String(r.P??""),String(r.mass||"-"),f(c.Vm,1),f(c.Vs,1),c.Ci==null?"-":(c.lt?"<":"")+f(c.Ci,3)]),
+        rows:g.rows.map(({r,c})=>[r.sample||"-",r.period||"-",f(num(r.fc),4),f(num(r.t),0),f(c.TcK,1),String(st.env.Pc??""),f(c.TK,1),String(st.env.P??""),String(r.mass||"-"),f(c.Vm,1),f(c.Vs,1),c.Ci==null?"-":(c.lt?"<":"")+f(c.Ci,3)]),
         w:[.075,.105,.08,.065,.075,.06,.075,.06,.08,.08,.08,.165],s:8,after:2});
       B.push({t:"mono",x:"Vm = fc × t × √(Pc×T / P×Tc); Vs = Vm × (P/760) × (298/T); Ci = M / Vs"});
       B.push({t:"twa",x:g.complete?`TWA₈ = [${g.rows.map(({r,c})=>`(${f(c.Ci,3)} × ${f(num(r.t),0)})`).join(" + ")}] / ${f(g.div,0)} = `:"TWA₈ = incomplete field data",b:g.complete?`${twaTxt(g)} mg/m³`:""})});
@@ -193,7 +193,7 @@ async function buildPdf(B){
   const R=await pdf.embedFont(StandardFonts.Helvetica),BD=await pdf.embedFont(StandardFonts.HelveticaBold);
   const PW=595.28,PH=841.89,ML=56,MR=56,CW=PW-ML-MR,TOP=PH-78,BOT=70;
   const INK=rgb(.1,.12,.15),GREY=rgb(.42,.45,.5),NAVY=rgb(.15,.25,.43),GREEN=rgb(.2,.6,.35),HEAD=rgb(.91,.93,.95),LINE=rgb(.35,.38,.42);
-  const I=st.info,client=I.client||"Client",gen=new Set();let page,y;
+  const I=st.info,client=I.client||"Client",gen=new Set(),attPages=new Set();let page,y;
   const newPage=()=>{page=pdf.addPage([PW,PH]);gen.add(page);y=TOP;return page};
   const tw=(t,f,s)=>f.widthOfTextAtSize(clean(t),s);
   const wrap=(t,f,s,w)=>{const out=[];clean(t).split("\n").forEach(par=>{const words=par.split(/ +/);let line="";words.forEach(wd=>{const test=line?line+" "+wd:wd;if(tw(test,f,s)>w&&line){out.push(line);line=wd}else line=test});out.push(line)});return out};
@@ -212,15 +212,18 @@ async function buildPdf(B){
     draw(head,true);body.forEach(b=>draw(b));y-=after}
   const toc=[];let tocPage,tocPos={};
   for(let bi=0;bi<B.length;bi++){const b=B[bi];
-    if(b.t==="cover"){newPage();y=PH-90;
-      const lg=await idb.get("logo").catch(()=>null);let lx=ML;
-      if(lg){try{const im=/png/i.test(lg.type)?await pdf.embedPng(lg.data):await pdf.embedJpg(lg.data);const d=im.scaleToFit(70,70);page.drawImage(im,{x:ML,y:y-d.height+8,width:d.width,height:d.height});lx=ML+d.width+14}catch(e){}}
-      cx((I.consName||"").toUpperCase(),BD,15,y,INK,lx);y-=18;[I.consAddr,I.consTel,I.consEmail].filter(Boolean).forEach(l=>{cx(l,R,8.5,y,GREY,lx);y-=12});
-      y=PH-235;page.drawLine({start:{x:ML,y},end:{x:PW-MR,y},thickness:1.2,color:GREEN});y-=40;
+    if(b.t==="cover"){newPage();y=PH-60;
+      const lg=st.info.logoName?await idb.get("logo").catch(()=>null):null;
+      if(lg){try{const im=/png/i.test(lg.type)?await pdf.embedPng(lg.data):await pdf.embedJpg(lg.data);const d=im.scaleToFit(150,72);page.drawImage(im,{x:(PW-d.width)/2,y:y-d.height,width:d.width,height:d.height});y-=d.height+20}catch(e){}}
+      else y-=16;
+      wrap((I.consName||"").toUpperCase(),BD,15,CW-40).forEach(l=>{cx(l,BD,15,y);y-=18});y-=2;
+      [I.consAddr,I.consTel,I.consEmail].filter(Boolean).forEach(t=>wrap(t,R,8.5,CW-80).forEach(l=>{cx(l,R,8.5,y,GREY);y-=12}));
+      y=Math.min(PH-235,y-24);page.drawLine({start:{x:ML,y},end:{x:PW-MR,y},thickness:1.2,color:GREEN});y-=40;
       ["PERSONAL","CHEMICAL EXPOSURE MONITORING","REPORT"].forEach(l=>{cx(l,BD,17,y,NAVY);y-=22});
       cx(`(REF. NO.: ${I.reportNo||"-"})`,BD,10,y,NAVY);y-=26;page.drawLine({start:{x:ML,y},end:{x:PW-MR,y},thickness:1.2,color:GREEN});y-=60;
-      cx(client.toUpperCase(),BD,12,y);y-=16;if(I.clientDosh){cx(`(DOSH NO.: ${I.clientDosh})`,BD,10.5,y);y-=16}
-      y-=36;cx((I.locName||client).toUpperCase(),BD,12,y);y-=16;if(I.locAddr)wrap(I.locAddr.toUpperCase(),BD,11,CW).forEach(l=>{cx(l,BD,11,y);y-=15});
+      wrap(client.toUpperCase(),BD,12.5,CW-60).forEach(l=>{cx(l,BD,12.5,y);y-=17});if(I.clientDosh){cx(`(DOSH NO.: ${I.clientDosh})`,BD,10.5,y);y-=16}
+      const ln=(I.locName||"").trim();if(ln&&ln.toLowerCase()!==client.trim().toLowerCase()){y-=14;wrap(ln.toUpperCase(),BD,11.5,CW-60).forEach(l=>{cx(l,BD,11.5,y);y-=16})}
+      if(I.locAddr){y-=10;wrap(I.locAddr.toUpperCase(),BD,10.5,CW-90).forEach(l=>{cx(l,BD,10.5,y);y-=15})}
       y-=50;[["HYGIENE TECHNICIAN NAME",I.htName],["DOSH REG. NO.",I.htReg],["DOSH REPORT NO.",I.doshReportNo],["ESM REPORT NO.",I.reportNo],["MONITORING DATE",I.dates]].forEach(([k,v])=>{txt(k,ML+30,y,BD,9.5);txt(": "+String(v||"-").toUpperCase(),ML+230,y,BD,9.5);y-=19});continue}
     if(b.t==="toc"){newPage();tocPage=page;txt("TABLE OF CONTENTS",ML,y-15,BD,15);y-=34;
       B.filter(x=>x.t==="h1"||x.t==="appx").forEach((x,i)=>{const label=x.t==="appx"?`APPENDIX ${x.L}: ${x.T}`:x.x;txt(label,ML,y-10.5,R,10.5);tocPos[label]=y-10.5;y-=19});continue}
@@ -229,6 +232,22 @@ async function buildPdf(B){
     if(b.t==="p"){para(b.x,{s:b.s||10.5,lh:b.s?13.5:15,gap:b.tight?5:7});continue}
     if(b.t==="cap"){ensure(60);let x=ML;txt(b.b+" ",x,y-10.5,BD,10.5);x+=tw(b.b+" ",BD,10.5);txt(b.x,x,y-10.5,R,10.5);y-=18;continue}
     if(b.t==="table"){table(b.head,b.rows,b.w,{s:b.s||9,bold:b.bold??-1,after:b.after??10});continue}
+    if(b.t==="equip"){const E=st.equip.filter(e=>e.name||e.details||e.photos.length);
+      const fr=[.06,.24,.38,.32],ws=fr.map(v=>v*CW),pad=5,s=9,lh=12,gap=5;
+      const head=["No.","Equipment / item","Details","Photo"],drawHead=()=>{let x=ML;const h=s+2*pad+2;head.forEach((c,i)=>{page.drawRectangle({x,y:y-h,width:ws[i],height:h,borderColor:LINE,borderWidth:.6,color:HEAD});txt(c,x+pad,y-pad-s+1,BD,s,rgb(.3,.35,.42));x+=ws[i]});y-=h};
+      if(!E.length){table(["Equipment / media"],[["-"]],[1]);continue}
+      ensure(60);drawHead();
+      for(let k=0;k<E.length;k++){const e=E[k];const nl=wrap(e.name||"-",BD,s,ws[1]-2*pad),dl=wrap(e.details||"-",R,s,ws[2]-2*pad);
+        const ims=[];for(const pid of e.photos){const p=await idb.get("photo:"+pid);if(p){try{ims.push(await pdf.embedJpg(p.data))}catch(err){try{ims.push(await pdf.embedPng(p.data))}catch(e2){}}}}
+        const tile=ims.length>1?68:86,perRow=Math.max(1,Math.floor((ws[3]-2*pad+gap)/(tile+gap))),prow=Math.ceil(ims.length/perRow),ph=ims.length?prow*tile+(prow-1)*gap:0;
+        const h=Math.max(nl.length*lh,dl.length*lh,ph)+2*pad;
+        if(y-h<BOT){newPage();drawHead()}
+        let x=ML;[String(k+1),null,null,null].forEach((c,i)=>{page.drawRectangle({x,y:y-h,width:ws[i],height:h,borderColor:LINE,borderWidth:.6});x+=ws[i]});
+        txt(String(k+1),ML+pad,y-pad-s+1,R,s);nl.forEach((l,j)=>txt(l,ML+ws[0]+pad,y-pad-s+1-j*lh,BD,s));dl.forEach((l,j)=>txt(l,ML+ws[0]+ws[1]+pad,y-pad-s+1-j*lh,R,s));
+        ims.forEach((im,j)=>{const d=im.scaleToFit(tile,tile),cx=ML+ws[0]+ws[1]+ws[2]+pad+(j%perRow)*(tile+gap),cy=y-pad-Math.floor(j/perRow)*(tile+gap);
+          page.drawImage(im,{x:cx+(tile-d.width)/2,y:cy-tile+(tile-d.height)/2,width:d.width,height:d.height})});
+        y-=h}
+      y-=10;continue}
     if(b.t==="rich"){ensure(b.keep?110:18);let x=ML;b.parts.forEach(([t,bo])=>{txt(t,x,y-10,bo?BD:R,10);x+=tw(t,bo?BD:R,10)});y-=17;continue}
     if(b.t==="mono"){ensure(14);txt(b.x,ML,y-9.5,R,9.5);y-=14;continue}
     if(b.t==="twa"){const ls=wrap(b.x,R,9.5,CW-80);ls.forEach((l,i)=>{ensure(14);txt(l,ML,y-9.5,R,9.5);if(i===ls.length-1&&b.b)txt(b.b,ML+tw(l,R,9.5)+2,y-9.5,BD,9.5);y-=14});y-=12;continue}
@@ -238,17 +257,18 @@ async function buildPdf(B){
       for(const meta of fs){const fl=await idb.get("file:"+meta.id);if(!fl)continue;
         try{if(/pdf/i.test(fl.type)||/\.pdf$/i.test(fl.name)){const src=await PDFDocument.load(fl.data,{ignoreEncryption:true});(await pdf.copyPages(src,src.getPageIndices())).forEach(p=>pdf.addPage(p))}
           else{let im;if(/png/i.test(fl.type))im=await pdf.embedPng(fl.data);else if(/jpe?g/i.test(fl.type))im=await pdf.embedJpg(fl.data);else im=await pdf.embedPng((await toPng(fl)).data);
-            newPage();const d=im.scaleToFit(CW,TOP-BOT-10);page.drawImage(im,{x:ML+(CW-d.width)/2,y:TOP-d.height,width:d.width,height:d.height})}}
+            newPage();attPages.add(page);const d=im.scaleToFit(CW,TOP-BOT-10);page.drawImage(im,{x:ML+(CW-d.width)/2,y:TOP-d.height,width:d.width,height:d.height})}}
         catch(e){console.error(e);newPage();txt(`Could not attach ${meta.name}: ${e.message}`,ML,TOP-20,R,10,rgb(.75,.2,.15))}}
       continue}
   }
-  const all=pdf.getPages(),N=all.length,hdr=`Chemical Exposure Monitoring at ${client} — Report No.: ${I.reportNo||"-"}`;
+  // page numbers count only the report's own pages; attached documents are not numbered or counted
+  const all=pdf.getPages(),repPages=all.filter(p=>gen.has(p)&&!attPages.has(p)),N=repPages.length,hdr=`Chemical Exposure Monitoring at ${client} — Report No.: ${I.reportNo||"-"}`;
   const disc=dd(`This report shall not be reproduced, distributed or copied without prior written consent of ${I.consName||"the consultant"}.`);
   let hs=8;const fitW=()=>tw(hdr,R,hs)+tw(I.dates||"",R,hs)+14;while(fitW()>CW&&hs>6.3)hs-=0.1;const dW=tw(I.dates||"",R,hs);
   let hT=hdr;while(hT.length>10&&tw(hT,R,hs)>CW-dW-14)hT=hT.slice(0,-2);if(hT!==hdr)hT=hT.trim()+"…";
-  all.forEach((p,i)=>{if(!gen.has(p))return;page=p;txt(hT,ML,PH-40,R,hs,GREY);txt(I.dates||"",PW-MR-dW,PH-40,R,hs,GREY);
+  repPages.forEach((p,i)=>{page=p;txt(hT,ML,PH-40,R,hs,GREY);txt(I.dates||"",PW-MR-dW,PH-40,R,hs,GREY);
     txt(disc,ML,36,R,6.8,GREY);const pn=`Page ${i+1} of ${N}`;txt(pn,PW-MR-tw(pn,R,8.5),36,R,8.5,GREY)});
-  page=tocPage;toc.forEach(t=>{if(tocPos[t.label]==null)return;const n=String(all.indexOf(t.page)+1);txt(n,PW-MR-tw(n,R,10.5),tocPos[t.label],R,10.5)});
+  page=tocPage;toc.forEach(t=>{if(tocPos[t.label]==null)return;const n=String(repPages.indexOf(t.page)+1);txt(n,PW-MR-tw(n,R,10.5),tocPos[t.label],R,10.5)});
   return pdf.save()}
 
 /* ---------------- Word renderer (docx) ---------------- */
@@ -269,15 +289,16 @@ async function buildDocx(B){
       children:[new D.Paragraph({spacing:{after:0},children:[run(c,{size:o.s?o.s*2:18,bold:ri===0||ci===o.bold,color:ri===0?"4A5563":undefined})]})]}))}))}));
     kids.push(new D.Paragraph({spacing:{after:o.after===2?40:160},children:[]}))};
   for(const b of B){
-    if(b.t==="cover"){const lg=await idb.get("logo").catch(()=>null);
-      if(lg){try{const bmp=await createImageBitmap(new Blob([lg.data],{type:lg.type}));kids.push(P([new D.ImageRun({type:/png/i.test(lg.type)?"png":"jpg",data:new Uint8Array(lg.data),transformation:fit(bmp.width,bmp.height,90,90)})],{align:AL.CENTER,line:null}))}catch(e){}}
+    if(b.t==="cover"){const lg=st.info.logoName?await idb.get("logo").catch(()=>null):null;
+      if(lg){try{const bmp=await createImageBitmap(new Blob([lg.data],{type:lg.type}));kids.push(P([new D.ImageRun({type:/png/i.test(lg.type)?"png":"jpg",data:new Uint8Array(lg.data),transformation:fit(bmp.width,bmp.height,200,96)})],{align:AL.CENTER,line:null,after:200}))}catch(e){}}
       kids.push(P([run((I.consName||"").toUpperCase(),{bold:true,size:30})],{align:AL.CENTER,after:60}));
       [I.consAddr,I.consTel,I.consEmail].filter(Boolean).forEach(l=>kids.push(P([run(l,{size:17,color:"6B7280"})],{align:AL.CENTER,after:0})));
       kids.push(P([],{before:1200,after:400}));
       ["PERSONAL","CHEMICAL EXPOSURE MONITORING","REPORT"].forEach(l=>kids.push(P([run(l,{bold:true,size:34,color:"26406E"})],{align:AL.CENTER,after:60})));
       kids.push(P([run(`(REF. NO.: ${I.reportNo||"-"})`,{bold:true,size:20,color:"26406E"})],{align:AL.CENTER,after:900}));
       kids.push(P([run(client.toUpperCase(),{bold:true,size:24})],{align:AL.CENTER,after:40}));if(I.clientDosh)kids.push(P([run(`(DOSH NO.: ${I.clientDosh})`,{bold:true,size:21})],{align:AL.CENTER}));
-      kids.push(P([run((I.locName||client).toUpperCase(),{bold:true,size:24})],{align:AL.CENTER,before:600,after:40}));if(I.locAddr)kids.push(P([run(I.locAddr.toUpperCase(),{bold:true,size:22})],{align:AL.CENTER,after:900}));
+      const ln=(I.locName||"").trim();if(ln&&ln.toLowerCase()!==client.trim().toLowerCase())kids.push(P([run(ln.toUpperCase(),{bold:true,size:23})],{align:AL.CENTER,before:300,after:40}));
+      kids.push(new D.Paragraph({alignment:AL.CENTER,spacing:{before:240,after:900},indent:{left:900,right:900},children:[run((I.locAddr||"").toUpperCase(),{bold:true,size:21})]}));
       [["HYGIENE TECHNICIAN NAME",I.htName],["DOSH REG. NO.",I.htReg],["DOSH REPORT NO.",I.doshReportNo],["ESM REPORT NO.",I.reportNo],["MONITORING DATE",I.dates]].forEach(([k,v])=>
         kids.push(new D.Paragraph({tabStops:[{type:D.TabStopType.LEFT,position:4200}],spacing:{after:80},indent:{left:600},children:[run(k,{bold:true,size:19}),run("\t: "+String(v||"-").toUpperCase(),{bold:true,size:19})]})));
       brk=true;continue}
@@ -288,6 +309,18 @@ async function buildDocx(B){
     if(b.t==="p"){b.x.split("\n").filter(s=>s.trim()).forEach(s=>{const bl=/^• /.test(s);kids.push(bl?new D.Paragraph({children:[run(s.slice(2),{size:b.s?b.s*2:SZ})],bullet:{level:0},alignment:AL.JUSTIFIED,spacing:{after:100,line:300},pageBreakBefore:brk}):P([run(s,{size:b.s?b.s*2:SZ})],{align:AL.JUSTIFIED,after:b.tight?80:140}));brk=false});continue}
     if(b.t==="cap"){kids.push(P([run(b.b+" ",{bold:true}),run(b.x)],{after:80,keepNext:true}));continue}
     if(b.t==="table"){table(b.head,b.rows,b.w,{s:b.s,bold:b.bold,after:b.after});continue}
+    if(b.t==="equip"){const E=st.equip.filter(e=>e.name||e.details||e.photos.length);
+      if(!E.length){table(["Equipment / media"],[["-"]],[1]);continue}
+      if(brk){kids.push(new D.Paragraph({children:[new D.PageBreak()]}));brk=false}
+      const w=[6,24,38,32],cell=(children,i,head)=>new D.TableCell({width:{size:w[i],type:W},shading:head?{fill:"E8ECF1",type:D.ShadingType.CLEAR,color:"auto"}:undefined,margins:{top:60,bottom:60,left:80,right:80},children});
+      const rows=[new D.TableRow({tableHeader:true,children:["No.","Equipment / item","Details","Photo"].map((h,i)=>cell([new D.Paragraph({spacing:{after:0},children:[run(h,{bold:true,size:18,color:"4A5563"})]})],i,true))})];
+      for(let k=0;k<E.length;k++){const e=E[k],imgs=[];
+        for(const pid of e.photos){const p=await idb.get("photo:"+pid);if(p){const k2=Math.min(86/p.w,86/p.h,1);imgs.push(new D.ImageRun({type:/png/i.test(p.type)?"png":"jpg",data:new Uint8Array(p.data),transformation:{width:Math.round(p.w*k2),height:Math.round(p.h*k2)}}),new D.TextRun({text:" "}))}}
+        rows.push(new D.TableRow({cantSplit:true,children:[cell([new D.Paragraph({spacing:{after:0},children:[run(k+1,{size:18})]})],0),
+          cell([new D.Paragraph({spacing:{after:0},children:[run(e.name||"-",{size:18,bold:true})]})],1),
+          cell((e.details||"-").split("\n").map(l=>new D.Paragraph({spacing:{after:0},children:[run(l,{size:18})]})),2),
+          cell([new D.Paragraph({spacing:{after:0},children:imgs.length?imgs:[run("",{size:18})]})],3)]}))}
+      kids.push(new D.Table({width:{size:100,type:W},rows}));kids.push(new D.Paragraph({spacing:{after:160},children:[]}));continue}
     if(b.t==="rich"){kids.push(P(b.parts.map(([t,bo])=>run(t,{bold:!!bo,size:20})),{after:80,keepNext:true,before:120}));continue}
     if(b.t==="mono"){kids.push(P([run(b.x,{size:18})],{after:20}));continue}
     if(b.t==="twa"){kids.push(P([run(b.x,{size:18}),run(b.b,{size:18,bold:true})],{after:200}));continue}
@@ -329,18 +362,139 @@ $("#dlPdf").onclick=()=>makeReport("pdf",$("#dlPreview").checked);$("#dlDoc").on
 $("#bPrint").onclick=()=>window.print();
 $("#bXls").onclick=()=>{if(!window.XLSX)return toast("Excel library didn't load");const wb=XLSX.utils.book_new(),G=groups();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(Object.entries(st.info).filter(([k])=>k!=="logoName").map(([k,v])=>({Field:k,Value:v}))),"Report info");
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(st.rows.map(r=>{const c=calc(r);return{Point:r.point,Worker:worker(r.point),Parameter:r.param,"Sample ID":r.sample,"Period (hrs)":r.period,"fc (L/min)":r.fc,"t (min)":r.t,"Tc (°C)":r.Tc,"Pc (mmHg)":r.Pc,"T (°C)":r.T,"P (mmHg)":r.P,"Mass (µg)":r.mass,"Vm (L)":c.Vm&&+c.Vm.toFixed(2),"Vs (L)":c.Vs&&+c.Vs.toFixed(2),"Ci (mg/m³)":c.Ci&&+c.Ci.toFixed(4)}})),"Calculation");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(st.rows.map(r=>{const c=calc(r);return{Point:r.point,Worker:worker(r.point),Parameter:r.param,"Sample ID":r.sample,"Period (hrs)":r.period,"fc (L/min)":r.fc,"t (min)":r.t,"Tc (°C)":st.env.Tc,"Pc (mmHg)":st.env.Pc,"T (°C)":st.env.T,"P (mmHg)":st.env.P,"Mass (µg)":r.mass,"Vm (L)":c.Vm&&+c.Vm.toFixed(2),"Vs (L)":c.Vs&&+c.Vs.toFixed(2),"Ci (mg/m³)":c.Ci&&+c.Ci.toFixed(4)}})),"Calculation");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(G.map(g=>({Worker:g.worker,Point:g.point,Parameter:g.param,"Duration (min)":g.sumT,"TWA8 (mg/m³)":twaTxt(g),"PEL (mg/m³)":g.pel,"% PEL":g.pct&&+g.pct.toFixed(1),Remarks:remark(g)}))),"Summary");
   XLSX.writeFile(wb,`CEM-${st.info.reportNo||"report"}.xlsx`)};
 
+/* ---------------- save to dashboard (IH job register) ---------------- */
+const isoD=d=>{const z=new Date(d.getTime()-d.getTimezoneOffset()*6e4);return z.toISOString().slice(0,10)};
+const addM=(s,m)=>{const d=new Date((s||isoD(new Date()))+"T00:00:00");d.setMonth(d.getMonth()+m);return isoD(d)};
+const slug=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40);
+function dashJobs(){
+  const a=analyse(),I=st.info,date=$("#svDate").value||isoD(new Date()),status=$("#svStatus").value,pic=$("#svPic").value||I.htName||"";
+  const base="cem-"+(slug(I.reportNo)||slug(I.client)||st.reportId.slice(0,8));
+  const P=a.P.filter(x=>x.worst).sort((p,q)=>(q.worst.pct||0)-(p.worst.pct||0));
+  return P.map((x,ix)=>{
+    const w=x.worst,cat=["dust","silica"].includes(x.haz)?"Dust / particulates":"Chemicals (VOC / hazardous)";
+    const top=w.cat==="nd"?"nd":x.top,recur=top==="over"?6:top==="half"?12:0;
+    const pts=x.done.map(g=>`${g.point} ${twaTxt(g)}`).join(", ");
+    const next=top==="over"?"Reduce exposure below PEL; improve controls; repeat CEM within 6 months":top==="half"?"Improve controls; repeat CEM within 12 months":top==="ten"?"Collect 6 additional samples (DOSH Guidelines 2022)":top==="nd"?"Below detection limit; use larger air volume next monitoring":"Maintain controls; review with CHRA assessor";
+    const jid=st.jobId&&ix===0?st.jobId:`${base}-${slug(x.p)}`;
+    return{id:jid,reportId:st.reportId,title:`CEM – ${x.p} (${I.area||"workplace"})`,reportNo:I.reportNo||"",location:I.locName||I.client||"",category:cat,pic,
+      priority:top==="over"?"Critical":top==="half"?"High":"Normal",status,requestDate:$("#svReq").value||date,deadline:date,
+      result:+w.twa.toFixed(3),unit:"mg/m³",nab:x.pel,recur,nextAction:next,
+      notes:`From CEM Calculator. Highest: ${w.worker} (${w.point}) ${twaTxt(w)} mg/m³ = ${pctG(w)} of PEL.${w.lt?" Result below detection limit (upper bound).":""} All points: ${pts}. Client: ${I.client||"-"}.`,
+      checklist:status==="Completed"?{sampling:true,lab:true,draft:true,review:true}:{sampling:true,lab:true,draft:status==="Reporting"},
+      seriesId:jid,cycle:1,controls:[],completedAt:status==="Completed"?date:null,source:"cem",_top:top,_pct:w.pct,_lt:w.lt}})}
+function renderSavePreview(){if(!$("#svPrev"))return;
+  if(!$("#svDate").value)$("#svDate").value=isoD(new Date());if(!$("#svPic").value)$("#svPic").value=st.info.htName||"";
+  const J=dashJobs();
+  $("#svPrev").innerHTML=J.length?`<tr><th>Dashboard job</th><th>Location</th><th>Highest TWA (mg/m³)</th><th>PEL</th><th>% PEL</th><th>Priority</th><th>Next monitoring</th><th>Next action</th></tr>`+J.map(j=>`<tr><td>${esc(j.title)}</td><td>${esc(j.location)||'<span class="pill p-over">set Location name</span>'}</td><td class="n">${j._lt?"<":""}${j.result}</td><td class="n">${j.nab??"–"}</td><td class="n">${j._lt?"<":""}${j._pct==null?"–":j._pct.toFixed(1)}</td><td><span class="pill ${j.priority==="Critical"?"p-over":j.priority==="High"?"p-warn":""}">${j.priority}</span></td><td>${j.recur?`${j.recur} months (${addM($("#svDate").value,j.recur)})`:"as per CHRA"}</td><td style="white-space:normal;font-size:12px;min-width:220px">${esc(j.nextAction)}</td></tr>`).join("")
+    :`<tr><td class="muted">Complete the sample and field data first. Jobs are created for chemicals with a calculated TWA.</td></tr>`}
+["#svStatus","#svDate","#svPic","#svReq"].forEach(s=>$(s)&&($(s).onchange=renderSavePreview));
+$("#bSave").onclick=async()=>{
+  const sb=window.__sb,role=window.__role;
+  if(!sb)return toast("Log in from the dashboard first, then reopen this page to save.",5000);
+  if(role!=="admin"&&role!=="editor")return toast("Your account is view-only. Ask an admin for editor access to save jobs.",5000);
+  const J=dashJobs();if(!J.length)return toast("Nothing to save yet. Complete the sample and field data first.");
+  if(!st.info.reportNo&&!confirm("This report has no Report No. Save anyway? (Report No. keeps re-saves from creating duplicates.)"))return;
+  busy(true,"Saving to dashboard…");
+  try{const {data:ex,error:e1}=await sb.from("ih_jobs").select("id,data");if(e1)throw e1;
+    const byId=Object.fromEntries((ex||[]).map(r=>[r.id,r.data]));let maxNo=Math.max(0,...(ex||[]).map(r=>+(r.data&&r.data.no)||0));
+    const up=[];
+    J.forEach(j=>{const {_top,_pct,_lt,...job}=j,old=byId[job.id];job.no=old&&old.no?old.no:++maxNo;if(old&&old.controls&&old.controls.length)job.controls=old.controls;if(old&&old.requestDate&&!$("#svReq").value)job.requestDate=old.requestDate;
+      up.push({id:job.id,data:job});
+      if(job.status==="Completed"&&job.recur>0){const nid=job.id+"-c2",o2=byId[nid];
+        up.push({id:nid,data:{...job,id:nid,no:o2&&o2.no?o2.no:++maxNo,status:o2?o2.status:"Waiting",requestDate:addM(job.deadline,job.recur-1),deadline:addM(job.deadline,job.recur),result:o2?o2.result:"",
+          cycle:2,checklist:o2?o2.checklist:{},controls:[],completedAt:null,reportNo:"",nextAction:"Schedule repeat CEM sampling",notes:`Repeat monitoring due after report ${job.reportNo||""}.`}})}});
+    const {error:e2}=await sb.from("ih_jobs").upsert(up);if(e2)throw e2;
+    st.savedAt=new Date().toISOString();st.dashJobs=up.map(u=>u.id);if(!st.jobId)st.jobId=J[0].id,st.jobTitle=J[0].title;save();await cloudSave();showLink();
+    $("#svMsg").innerHTML=`Saved ${up.length} job${up.length>1?"s":""} at ${new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}. <a href="index.html">Open dashboard →</a>`;
+    toast("Saved to dashboard")}
+  catch(e){console.error(e);toast("Could not save: "+(e.message||e),6000)}finally{busy(false)}};
+
+/* ---------------- online storage (Supabase) ---------------- */
+const BUCKET="cem-files";let cloudBusy=false,cloudT=null,cloudAgain=false;
+const canEditCloud=()=>!!window.__sb&&(window.__role==="admin"||window.__role==="editor");
+function cloudStatus(t,ok){const e=$("#cloudSt");if(e)e.innerHTML=t?`${ok===false?"⚠️":ok?"☁️ ✓":"☁️"} ${esc(t)}`:""}
+function fileRefs(){const k=[];Object.values(st.att||{}).forEach(a=>a.forEach(x=>k.push("file:"+x.id)));(st.equip||[]).forEach(e=>e.photos.forEach(p=>k.push("photo:"+p)));if(st.info.logoName)k.push("logo");return k}
+const objPath=k=>`${st.reportId}/${k.replace(":","_")}`;
+function onLocalSave(){if(!canEditCloud()||cloudBusy&&!cloudAgain){if(cloudBusy)cloudAgain=true;return}
+  clearTimeout(cloudT);cloudStatus("Unsaved changes…");cloudT=setTimeout(cloudSave,2500)}
+async function cloudSave(){if(!canEditCloud())return false;if(cloudBusy){cloudAgain=true;return}
+  cloudBusy=true;cloudAgain=false;const sb=window.__sb;cloudStatus("Saving online…");
+  try{for(const k of fileRefs()){if(st.up[k])continue;const f=await idb.get(k);if(!f)continue;
+      const {error}=await sb.storage.from(BUCKET).upload(objPath(k),new Blob([f.data],{type:f.type||"application/octet-stream"}),{upsert:true,contentType:f.type||"application/octet-stream"});
+      if(error)throw error;st.up[k]=1;st.meta[k]={type:f.type,name:f.name||"",w:f.w||0,h:f.h||0}}
+    const {error}=await sb.from("cem_reports").upsert({id:st.reportId,job_id:st.jobId||null,report_no:st.info.reportNo||"",client:st.info.client||"",data:st});
+    if(error)throw error;st.cloudAt=new Date().toISOString();try{localStorage.setItem(lkey(st.reportId),JSON.stringify(st))}catch(e){}
+    cloudStatus("Saved online "+new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}),true);return true}
+  catch(e){console.error(e);cloudStatus("Not saved online (kept on this device): "+(e.message||e),false);return false}
+  finally{cloudBusy=false;if(cloudAgain){cloudAgain=false;clearTimeout(cloudT);cloudT=setTimeout(cloudSave,1500)}}}
+async function pullFiles(){const sb=window.__sb;let n=0;
+  for(const k of fileRefs()){if(await idb.get(k))continue;const {data,error}=await sb.storage.from(BUCKET).download(objPath(k));if(error||!data)continue;
+    const m=st.meta[k]||{};await idb.put(k,{name:m.name,type:m.type||data.type,w:m.w,h:m.h,data:await data.arrayBuffer()});n++}
+  return n}
+function rerenderEverything(){$("#divTotal").checked=!!st.divTotal;Object.keys(thumbURL).forEach(k=>delete thumbURL[k]);
+  renderInfo();renderEquip();renderControls();renderAll();renderTexts();renderAtt();showLink();
+  try{history.replaceState(null,"",location.pathname+"?report="+encodeURIComponent(st.reportId))}catch(e){}}
+function showLink(){const b=$("#linkBar");if(!b)return;if(st.jobId){b.style.display="";$("#linkTxt").innerHTML=`Linked to dashboard job <b>${esc(st.jobTitle||st.jobId)}</b>. “Complete &amp; save to dashboard” updates that job.`}else b.style.display="none"}
+async function openCloudReport(id){const sb=window.__sb;busy(true,"Opening report…");
+  try{const {data,error}=await sb.from("cem_reports").select("id,data,updated_at").eq("id",id).maybeSingle();if(error)throw error;if(!data)throw new Error("Report not found");
+    replaceState({...data.data,reportId:data.id});busy(true,"Downloading files…");await pullFiles();rerenderEverything();
+    setTimeout(()=>{clearTimeout(cloudT);cloudStatus("Opened · saved online "+new Date(data.updated_at).toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}),true)},450)}
+  catch(e){toast("Could not open report: "+(e.message||e),5000)}finally{busy(false)}}
+async function startFromJob(jobId){const sb=window.__sb;
+  const {data:rep}=await sb.from("cem_reports").select("id").eq("job_id",jobId).limit(1);if(rep&&rep.length)return openCloudReport(rep[0].id);
+  const {data:job}=await sb.from("ih_jobs").select("id,data").eq("id",jobId).maybeSingle();if(!job)return toast("Job not found");
+  if(!canEditCloud())return toast("No report has been started for this job yet.",5000);
+  const j=job.data||{};replaceState({jobId:job.id,jobTitle:j.title||"",info:{...DEF_INFO,client:j.location||"",locName:j.location||"",reportNo:j.reportNo||"",htName:j.pic||""},svReq:j.requestDate||""});
+  rerenderEverything();if(j.requestDate)$("#svReq").value=j.requestDate;if(j.pic)$("#svPic").value=j.pic;await cloudSave();toast("New CEM report started for this job")}
+async function listReports(){const sb=window.__sb;$("#mRep").classList.add("show");$("#repList").innerHTML='<tr><td class="muted">Loading…</td></tr>';
+  const {data,error}=await sb.from("cem_reports").select("id,report_no,client,updated_at,updated_by,job_id").order("updated_at",{ascending:false}).limit(300);
+  if(error){$("#repList").innerHTML=`<tr><td>${esc(error.message)}</td></tr>`;return}
+  const draw=()=>{const q=$("#repQ").value.toLowerCase();const L=(data||[]).filter(x=>!q||(x.report_no+" "+x.client).toLowerCase().includes(q));
+    $("#repList").innerHTML=`<tr><th>Report no.</th><th>Client</th><th>Last saved</th><th>By</th><th>Job</th></tr>`+(L.length?L.map(x=>`<tr class="r" data-open="${esc(x.id)}"><td><b>${esc(x.report_no)||"(no number)"}</b>${x.id===st.reportId?' <span class="pill">open</span>':""}</td><td>${esc(x.client)||"–"}</td><td>${x.updated_at?new Date(x.updated_at).toLocaleString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}):"–"}</td><td class="muted">${esc(x.updated_by)||""}</td><td>${x.job_id?"🔗":""}</td></tr>`).join(""):'<tr><td colspan="5" class="muted">No reports saved online yet.</td></tr>');
+    $$("[data-open]").forEach(tr=>tr.onclick=async()=>{$("#mRep").classList.remove("show");if(tr.dataset.open===st.reportId)return;if(canEditCloud())await cloudSave();openCloudReport(tr.dataset.open)})};
+  $("#repQ").oninput=draw;draw()}
+$("#bReports").onclick=()=>window.__sb?listReports():toast("Log in from the dashboard to see online reports.");
+$("#bNew").onclick=async()=>{if(st.rows.length&&!confirm("Start a new, empty report? The current report stays saved"+(canEditCloud()?" online.":" on this device.")))return;
+  if(canEditCloud())await cloudSave();replaceState({});rerenderEverything();toast("New report started")};
+
+/* clear everything in the current report (company details, report link and dashboard link are kept) */
+$("#bWipe").onclick=async()=>{
+  if(!confirm("Clear ALL data in this report?\n\nThis removes report info, equipment details and photos, CoA results, samples, controls, written text and appendices.\nCompany details and logo are kept.\n\nThis cannot be undone."))return;
+  const keep={reportId:st.reportId,jobId:st.jobId};
+  const ids=[];Object.values(st.att||{}).forEach(a=>(a||[]).forEach(x=>ids.push("file:"+x.id)));(st.equip||[]).forEach(e=>(e.photos||[]).forEach(ph=>ids.push("photo:"+(ph.id||ph))));
+  for(const k of ids){try{await idb.del(k)}catch(e){}}
+  replaceState(keep);rerenderEverything();if(canEditCloud())cloudSave();toast("All data in this report cleared")};
+
+/* company details shared online as the default for new reports */
+async function onCompanyChange(c){if(!canEditCloud())return;const sb=window.__sb;
+  try{if(c.logoName){const lg=await idb.get("logo");if(lg)await sb.storage.from(BUCKET).upload("company/logo",new Blob([lg.data],{type:lg.type}),{upsert:true,contentType:lg.type})}
+    await sb.from("ih_settings").upsert({key:"company",value:{...c,logoType:c.logoName?((await idb.get("logo"))||{}).type:""}})}catch(e){console.warn("company default not saved online",e)}}
+async function pullCompanyDefault(){const sb=window.__sb;try{const {data}=await sb.from("ih_settings").select("value").eq("key","company").maybeSingle();if(!data||!data.value)return;
+  const c=data.value;try{localStorage.setItem("ihcc_company",JSON.stringify(c))}catch(e){}
+  if(c.logoName&&!(await idb.get("logo"))){const {data:blob}=await sb.storage.from(BUCKET).download("company/logo");if(blob)await idb.put("logo",{name:c.logoName,type:c.logoType||blob.type,data:await blob.arrayBuffer()})}
+  if(!st.info.consName&&!st.rows.length){COMP_KEYS.forEach(k=>{if(c[k])st.info[k]=c[k]});save();renderInfo()}}catch(e){console.warn(e)}}
+
 /* ---------------- start ---------------- */
-function renderAll(){renderParams();renderPoints();renderRows();renderOut();renderTexts(true)}
+function renderAll(){renderParams();renderPoints();renderRows();renderOut();renderTexts(true);renderSavePreview()}
 try{document.documentElement.dataset.theme=JSON.parse(localStorage.getItem("ihcc_theme"))||""}catch(e){}
-$("#divTotal").checked=!!st.divTotal;$("#logoName").textContent=st.info.logoName||"";
-fillChemList();renderInfo();renderControls();renderAll();renderTexts();renderAtt();
+$("#divTotal").checked=!!st.divTotal;
+fillChemList();renderInfo();renderEquip();renderControls();renderAll();renderTexts();renderAtt();
 (async()=>{const C=window.IHCC_CONFIG||{};const go=()=>location.replace("index.html");
-  if(C.TEST_MODE){document.body.style.visibility="visible";return}
+  if(C.TEST_MODE){document.body.style.visibility="visible";cloudStatus("Saved on this device only (test mode)");return}
   try{if(!window.supabase||!C.SUPABASE_URL||C.SUPABASE_URL.includes("YOUR-PROJECT"))return go();
     const sb=window.supabase.createClient(C.SUPABASE_URL,C.SUPABASE_ANON_KEY);const {data:{session}}=await sb.auth.getSession();if(!session)return go();
     const {data}=await sb.from("app_users").select("role").eq("email",(session.user.email||"").toLowerCase()).maybeSingle();if(!data)return go();
-    document.body.style.visibility="visible"}catch(e){go()}})();
+    window.__sb=sb;window.__role=data.role;if(data.role==="viewer"){const b=$("#bSave");b.disabled=true;$("#bNew").style.display="none";$("#bWipe").style.display="none";$("#svMsg").textContent="View-only account: saving to the dashboard needs editor access.";cloudStatus("View only")}
+    document.body.style.visibility="visible";
+    await pullCompanyDefault();
+    const q=new URLSearchParams(location.search);
+    if(q.get("report"))await openCloudReport(q.get("report"));
+    else if(q.get("job"))await startFromJob(q.get("job"));
+    else{const {data:cr}=await sb.from("cem_reports").select("updated_at").eq("id",st.reportId).maybeSingle();
+      if(cr&&(!st.cloudAt||new Date(cr.updated_at)>new Date(st.cloudAt)+5000))await openCloudReport(st.reportId);
+      else if(canEditCloud()&&(st.rows.length||st.info.client))cloudSave();showLink()}
+  }catch(e){console.error(e);go()}})();

@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="IH Control">
 <title>Corporate IH Control Center</title>
-<script src="config.js"></script>
+<script>document.write('<script src="config.js?v='+Date.now()+'"><\/script>')</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -207,12 +207,6 @@ body.present{font-size:16px}
   <datalist id="dlLoc"></datalist><datalist id="dlPic"></datalist>
 </div>
 
-<div class="card">
-  <h2>Site map</h2>
-  <p class="sub">Dot colour = worst condition at that site</p>
-  <div class="row noP ed" style="margin-bottom:8px"><label style="margin:0">Set site point:</label><select id="mapSite" style="width:auto"></select><span class="muted" style="font-size:12px">then click on the map</span></div>
-  <div class="map" id="map"></div>
-</div>
 
 <div class="card">
   <div class="row" style="justify-content:space-between">
@@ -239,6 +233,7 @@ body.present{font-size:16px}
   <h2>Authorised users</h2>
   <p class="sub">Only people on this list can open the app. Viewer = read only · Editor = add/edit jobs · Admin = everything plus this list. Each person also needs a login in Supabase → Authentication → Users.</p>
   <div class="tscroll"><table id="usersT"></table></div>
+  <div class="row" style="margin:12px 0 4px"><button id="bBackup">⬇ Download backup (jobs + reports)</button><span class="muted" style="font-size:12px">A JSON copy of all jobs and CEM report data. Keep it somewhere safe; it's confidential. Attached files stay in Supabase Storage.</span></div>
   <form id="userForm" class="fg" style="margin-top:10px">
     <div><label>Email or username</label><input name="email" required></div>
     <div><label>Name</label><input name="name"></div>
@@ -349,7 +344,7 @@ function normJob(o){
     pic:o.pic||"",priority:["Normal","High","Critical"].includes(o.priority)?o.priority:"Normal",status:STATUS.includes(o.status)?o.status:"Waiting",
     requestDate:o.requestDate||iso(today()),deadline:o.deadline||"",result:o.result===""||o.result==null?"":+o.result,unit:o.unit||"",
     nab:o.nab===""||o.nab==null?"":+o.nab,recur:+o.recur||0,nextAction:o.nextAction||"",notes:o.notes||"",checklist:o.checklist||{},
-    seriesId:o.seriesId||null,cycle:o.cycle||1,controls:o.controls||[],completedAt:o.completedAt||null};
+    seriesId:o.seriesId||null,cycle:o.cycle||1,controls:o.controls||[],completedAt:o.completedAt||null,reportId:o.reportId||null,source:o.source||null};
 }
 function setStatus(j,st){
   const was=done(j); j.status=st;
@@ -383,7 +378,7 @@ function render(){
   fillSel($("#fCat"),CATS,"All categories");fillSel($("#fSt"),STATUS,"All statuses");
   $("#dlLoc").innerHTML=uniq("location").map(x=>`<option value="${esc(x)}">`).join("");
   $("#dlPic").innerHTML=uniq("pic").map(x=>`<option value="${esc(x)}">`).join("");
-  renderKpis();renderAtt();renderCtl();renderHeat();renderComp();renderTrend();renderMap();renderReg();
+  renderKpis();renderAtt();renderCtl();renderHeat();renderComp();renderTrend();renderReg();
   persist();
 }
 function renderKpis(){
@@ -453,17 +448,6 @@ function renderTrend(){
     leg+=`<span><i style="background:${col}"></i>${esc(a[0].title)} (${esc(a[0].location)})</span>`});
   $("#trend").innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${g}</svg><div class="legend">${leg}</div>`;
 }
-function renderMap(){
-  const locs=uniq("location");
-  locs.forEach((l,i)=>{if(!sites[l])sites[l]={x:12+((i*29)%76),y:20+((i*37)%60)}});
-  fillSel($("#mapSite"),locs,"— choose site —");
-  const col={safe:"var(--safe)",warn:"var(--warn)",over:"var(--over)"};
-  $("#map").innerHTML=`<svg viewBox="0 0 100 50" preserveAspectRatio="none"><path d="M0 35 Q20 28 35 33 T70 30 T100 34 V50 H0Z" fill="var(--chip)" opacity=".8"/></svg>`+
-    locs.map(l=>{const s=sites[l],v=cellLevel(jobs.filter(j=>j.location===l));return `<div class="dot" style="left:${s.x}%;top:${s.y}%"><i style="background:${col[v]||"#999"}"></i>${esc(l)}</div>`}).join("");
-}
-$("#map").addEventListener("click",e=>{if(!canEdit)return;const l=$("#mapSite").value;if(!l)return;const r=e.currentTarget.getBoundingClientRect();
-  sites[l]={x:+((e.clientX-r.left)/r.width*100).toFixed(1),y:+((e.clientY-r.top)/r.height*100).toFixed(1)};renderMap();persist();$("#mapSite").value=l;toast("Point saved for "+l)});
-
 function renderReg(){
   const L=filtered();$("#count").textContent=L.length+" of "+jobs.length+" jobs";
   if(view==="table")regTable(L);else if(view==="kanban")regKanban(L);else regTimeline(L);
@@ -473,19 +457,20 @@ function dlBadge(j){const d=daysLeft(j);if(done(j))return fmtD(j.deadline);retur
 function regTable(L){
   if(!L.length){$("#reg").innerHTML='<p class="muted">No matching jobs.</p>';return}
   const dis=canEdit?"":"disabled";
-  $("#reg").innerHTML=`<div class="tscroll"><table><tr><th>ID / Title</th><th>Report no.</th><th>Location</th><th>Category</th><th>Person in charge</th><th>Priority</th><th>Deadline</th><th>Status</th><th>Next action</th><th>Progress</th><th>Result vs OEL</th><th class="noP ed">Actions</th></tr>
+  $("#reg").innerHTML=`<div class="tscroll"><table><tr><th>ID / Title</th><th>Report no.</th><th>Location</th><th>Category</th><th>Person in charge</th><th>Priority</th><th>Deadline</th><th>Status</th><th>Next action</th><th>Progress</th><th>Result vs OEL</th><th class="noP">Actions</th></tr>
   ${L.sort((a,b)=>(done(a)-done(b))||(done(a)?(b.deadline||"").localeCompare(a.deadline||""):(a.deadline||"9").localeCompare(b.deadline||"9"))).map(j=>`<tr id="r-${j.id}"><td><b>${jid(j)}</b>${j.recur?` <span class="pill" title="Recurs every ${j.recur} months">↻ ${j.cycle}</span>`:""}<br>${esc(j.title)}</td><td>${esc(j.reportNo)||"–"}</td><td>${esc(j.location)}</td><td>${esc(j.category)}</td><td>${esc(j.pic)}</td><td>${prBadge(j.priority)}</td><td>${dlBadge(j)}</td>
   <td><select data-st="${j.id}" style="min-width:120px" ${dis}>${STATUS.map(s=>`<option ${s===j.status?"selected":""}>${s}</option>`).join("")}</select></td><td>${esc(j.nextAction)||"–"}</td>
   <td><div class="prog">${["sampling","lab","draft","review"].map(k=>`<i class="${j.checklist?.[k]?"d":""}" title="${k}"></i>`).join("")}</div><span class="muted" style="font-size:11px">${progN(j)}/4</span></td><td>${lvlPill(j)}</td>
-  <td class="noP ed" style="white-space:nowrap"><button class="sm" data-ed="${j.id}">Edit</button> ${lvl(j)==="over"?`<button class="sm" data-ctl="${j.id}">Control</button> `:""}<button class="sm" data-del="${j.id}">Delete</button></td></tr>`).join("")}</table></div>`;
+  <td class="noP" style="white-space:nowrap">${j.reportId?`<button class="sm" data-rep="${esc(j.id)}" title="Open the CEM report for this job">📄 Report</button> `:canEdit?`<button class="sm" data-rep="${esc(j.id)}" title="Start a CEM report linked to this job">📝 Start CEM</button> `:""}<span class="ed"><button class="sm" data-ed="${j.id}">Edit</button> ${lvl(j)==="over"?`<button class="sm" data-ctl="${j.id}">Control</button> `:""}<button class="sm" data-del="${j.id}">Delete</button></span></td></tr>`).join("")}</table></div>`;
   $$("[data-st]").forEach(s=>s.onchange=()=>{setStatus(jobs.find(j=>j.id===s.dataset.st),s.value);render()});
   $$("[data-ed]").forEach(b=>b.onclick=()=>editJob(b.dataset.ed));
+  $$("[data-rep]").forEach(b=>b.onclick=()=>{const j=jobs.find(x=>x.id===b.dataset.rep);location.href=j.reportId?"cem.html?report="+encodeURIComponent(j.reportId):"cem.html?job="+encodeURIComponent(j.id)});
   $$("#reg [data-ctl]").forEach(b=>b.onclick=()=>openCtl(b.dataset.ctl));
   $$("[data-del]").forEach(b=>b.onclick=()=>{const j=jobs.find(x=>x.id===b.dataset.del);confirmBox(`Delete ${jid(j)} — ${j.title}?`,()=>{jobs=jobs.filter(x=>x!==j);render();toast("Deleted")})});
 }
 function regKanban(L){
   $("#reg").innerHTML=`<div class="kanban">${STATUS.map(s=>`<div class="col" data-col="${s}"><h3>${s} <span class="muted">(${L.filter(j=>j.status===s).length})</span></h3>
-  ${L.filter(j=>j.status===s).map(j=>`<div class="kc" draggable="${canEdit}" data-id="${j.id}"><b>${jid(j)}</b> ${prBadge(j.priority)}<br>${esc(j.title)}<div class="muted" style="font-size:12px">${esc(j.location)} · ${esc(j.pic)}</div><div style="margin-top:4px">${dlBadge(j)} ${ratio(j)!=null?lvlPill(j):""}</div></div>`).join("")}</div>`).join("")}</div>`;
+  ${L.filter(j=>j.status===s).map(j=>`<div class="kc" draggable="${canEdit}" data-id="${j.id}"><b>${jid(j)}</b> ${prBadge(j.priority)}<br>${esc(j.title)}<div class="muted" style="font-size:12px">${esc(j.location)} · ${esc(j.pic)}</div><div style="margin-top:4px">${dlBadge(j)} ${ratio(j)!=null?lvlPill(j):""}</div>${j.reportId?`<a href="cem.html?report=${encodeURIComponent(j.reportId)}" style="font-size:12px">📄 Open report</a>`:""}</div>`).join("")}</div>`).join("")}</div>`;
   if(!canEdit)return;
   $$(".kc").forEach(c=>{c.ondragstart=e=>e.dataTransfer.setData("text",c.dataset.id);c.ondblclick=()=>editJob(c.dataset.id)});
   $$(".col").forEach(col=>{col.ondragover=e=>{e.preventDefault();col.classList.add("drag")};col.ondragleave=()=>col.classList.remove("drag");
@@ -572,6 +557,10 @@ $("#userForm").onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(
   const {error}=await sb.from("app_users").upsert({email:toEmail(f.email),name:f.name||null,role:f.role});
   toast(error?error.message:"User saved — create their login in Supabase if they don't have one");if(!error)e.target.reset();loadUsers()};
 
+$("#bBackup").onclick=async()=>{try{const [{data:J,error:e1},{data:R,error:e2},{data:U}]=await Promise.all([sb.from("ih_jobs").select("*"),sb.from("cem_reports").select("*"),sb.from("app_users").select("*")]);
+  if(e1||e2)throw e1||e2;const blob=new Blob([JSON.stringify({exportedAt:new Date().toISOString(),by:me,jobs:J,cemReports:R,users:U},null,1)],{type:"application/json"});
+  download(blob,`ihcc-backup-${iso(today())}.json`);toast(`Backup downloaded: ${J.length} jobs, ${R.length} reports`)}catch(e){toast("Backup failed: "+(e.message||e))}};
+
 /* ---------- sample data (admin) ---------- */
 function sampleData(){
   const t=iso(today()),D=n=>{const d=today();d.setDate(d.getDate()+n);return iso(d)};
@@ -603,7 +592,8 @@ function loginMsg(m){$("#loginErr").textContent=m}
 async function afterSignIn(user){
   me=(user.email||"").toLowerCase();
   const {data,error}=await sb.from("app_users").select("role,name").eq("email",me).maybeSingle();
-  if(error||!data){await sb.auth.signOut();showLogin("This account is not authorised to use the app. Ask an admin to add you.");return}
+  if(error){await sb.auth.signOut();showLogin(/does not exist|relation|schema cache/i.test(error.message)?"Logged in, but the database isn't set up yet. Run setup.sql in Supabase → SQL Editor, then try again.":"Database error: "+error.message);return}
+  if(!data){await sb.auth.signOut();showLogin(`Logged in as ${me}, but this email isn't on the authorised list. In setup.sql the admin line must use exactly this email; fix it and run the last line again in SQL Editor.`);return}
   role=data.role;canEdit=role==="admin"||role==="editor";
   document.body.classList.add("authed");document.body.classList.toggle("ro",!canEdit);document.body.classList.toggle("admin",role==="admin");
   $("#roBanner").style.display=canEdit?"none":"block";
@@ -614,7 +604,12 @@ function showLogin(msg){document.body.classList.remove("authed","admin","ro");jo
 $("#loginForm").onsubmit=async e=>{e.preventDefault();if(!sb)return;$("#bLogin").disabled=true;loginMsg("");
   const {data,error}=await sb.auth.signInWithPassword({email:toEmail($("#lu").value),password:$("#lp").value});
   $("#bLogin").disabled=false;$("#lp").value="";
-  if(error){loginMsg("Wrong username or password.");return}
+  if(error){const m=(error.message||"").toLowerCase();
+    loginMsg(/invalid login|invalid credentials/.test(m)?`Wrong username or password. (Trying ${toEmail($("#lu").value||"")}. That user must exist in Supabase → Authentication → Users.)`
+      :/email not confirmed/.test(m)?"This user isn't confirmed. In Supabase → Authentication → Users, open the user and confirm them (or recreate with “Auto Confirm User” ticked)."
+      :/fetch|network|failed to/.test(m)?"Can't reach Supabase. Check the Project URL in config.js and that the project isn't paused."
+      :/api key|apikey|jwt|invalid key/.test(m)?"Supabase rejected the key in config.js. Copy the anon public / publishable key again (no spaces)."
+      :"Login failed: "+error.message);return}
   afterSignIn(data.user)};
 $("#bOut").onclick=async()=>{await saving;sb.removeAllChannels();await sb.auth.signOut();showLogin()};
 
@@ -630,12 +625,22 @@ $$("#quick button").forEach(b=>b.onclick=()=>setQuick(b.dataset.q));
 document.documentElement.dataset.theme=local.get("ihcc_theme","");
 $("#hdrDate").textContent=new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
 resetForm();
+function setupProblem(){const C=window.IHCC_CONFIG,u=String((C&&C.SUPABASE_URL)||"").trim(),k=String((C&&C.SUPABASE_ANON_KEY)||"").trim();
+  if(!C)return"config.js did not load. Either it's missing from the site, or it has a typing mistake (a missing quote \" or comma). Re-upload it, or compare it with the original.";
+  if(!u||/YOUR-PROJECT/i.test(u))return"config.js still has the placeholder Project URL. Paste your Supabase Project URL (https://xxxx.supabase.co) and upload config.js again.";
+  if(!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/?$/i.test(u))return`The Project URL in config.js looks wrong: “${u}”. It should look like https://abcdefgh.supabase.co, with nothing after .co.`;
+  if(!k||/YOUR-ANON/i.test(k))return"config.js still has the placeholder key. Paste the anon public key (starts with eyJ…) or the publishable key (starts with sb_publishable_…).";
+  if(/^sb_secret_/i.test(k)||/service_role/i.test(atobSafe(k)))return"config.js contains the SECRET / service_role key. Remove it now, and use the anon public or publishable key instead.";
+  if(!/^eyJ/.test(k)&&!/^sb_publishable_/.test(k))return`The key in config.js doesn't look right (it starts with “${k.slice(0,8)}…”). Use the anon public key (eyJ…) or the publishable key (sb_publishable_…).`;
+  if(!window.supabase)return"Couldn't load the Supabase library from the internet. Check your connection, turn off any ad/script blocker for this site, then refresh.";
+  return""}
+function atobSafe(k){try{return atob(k.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))}catch(e){return""}}
 (async()=>{
-  if(!window.supabase||!CFG.SUPABASE_URL||CFG.SUPABASE_URL.includes("YOUR-PROJECT")){
-    showLogin("Setup needed: put your Supabase URL and anon key in config.js.");$("#bLogin").disabled=true;return}
-  sb=window.supabase.createClient(CFG.SUPABASE_URL,CFG.SUPABASE_ANON_KEY);
-  const {data:{session}}=await sb.auth.getSession();
-  if(session)afterSignIn(session.user);else showLogin();
+  const prob=setupProblem();
+  if(prob){showLogin("Setup needed: "+prob);$("#bLogin").disabled=true;return}
+  sb=window.supabase.createClient(CFG.SUPABASE_URL.trim().replace(/\/$/,""),CFG.SUPABASE_ANON_KEY.trim());
+  try{const {data:{session}}=await sb.auth.getSession();if(session)afterSignIn(session.user);else showLogin()}
+  catch(e){showLogin("Can't reach Supabase: "+(e.message||e)+". Check the Project URL in config.js, and that the project isn't paused (supabase.com → your project → Resume).")}
 })();
 </script>
 </body>

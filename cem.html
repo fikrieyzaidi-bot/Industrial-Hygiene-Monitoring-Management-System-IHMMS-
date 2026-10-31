@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#2f5673">
 <title>CEM Calculator — 8-hour TWA</title>
-<script src="config.js"></script>
+<script>document.write('<script src="config.js?v='+Date.now()+'"><\/script>')</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
@@ -69,42 +69,77 @@ tr.blank td{opacity:.55}
 .busy{position:fixed;inset:0;background:rgba(10,20,30,.45);display:none;align-items:center;justify-content:center;z-index:70;color:#fff;font-size:15px}
 .busy.show{display:flex}
 @media print{.top,.noP,button,.filebtn{display:none!important}body{background:#fff}.card{border:none;padding:0}td input,td select{border:none;padding:0;background:none}}
+.eq{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px;background:var(--card)}
+.eq textarea{min-height:96px;font-size:13px}
+.ph{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.ph .t{position:relative;width:118px;height:88px;border:1px solid var(--line);border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:visible}
+.ph .t img{max-width:110px;max-height:80px;object-fit:contain}
+.ph .t button{position:absolute;top:-10px;right:-10px;width:26px;height:26px;border-radius:50%;padding:0;font-size:13px;line-height:24px;background:var(--card)}
+.ph .add{border:1.5px dashed var(--pri);color:var(--pri);border-radius:10px;padding:10px 14px;font-size:13px;cursor:pointer;background:none}
+.ph .add input{display:none}
+.top .tb{color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:6px 10px}
+#mRep .box{width:min(760px,100%);max-height:85vh;overflow:auto}
+#mRep tr.r{cursor:pointer}#mRep tr.r:hover td{background:var(--chip)}
+.grp{border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:12px;background:var(--card)}
+.grp .gf{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media(max-width:900px){.grp .gf{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.srcok{color:var(--safe);font-size:13px;margin:10px 0 6px;line-height:1.4}
+.srcman{color:var(--warn);font-size:13px;margin:10px 0 6px}
+.grp table td input{min-width:90px}
+.grp .res{margin-top:8px;font-size:13px}
+.grp details textarea{min-height:80px;font-family:ui-monospace,monospace;font-size:12.5px}
+.co{display:grid;grid-template-columns:150px 1fr;gap:16px;align-items:start}
+@media(max-width:600px){.co{grid-template-columns:1fr}}
+.logo-prev{width:150px;height:110px;border:1.5px dashed var(--line);border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;margin:0 auto}
+.logo-prev img{max-width:140px;max-height:100px;object-fit:contain}
 </style>
 </head>
 <body style="visibility:hidden">
-<div class="top noP"><a href="index.html">← Back to dashboard</a><strong style="margin-left:auto">IH Control</strong></div>
+<div class="top noP"><a href="index.html">← Back to dashboard</a><span id="cloudSt" style="font-size:12.5px;opacity:.95;margin-left:6px"></span>
+  <span style="margin-left:auto;display:flex;gap:8px"><button class="tb" id="bReports">📂 Reports</button><button class="tb" id="bNew">+ New report</button><button class="tb" id="bWipe" title="Clear all data in this report">🗑 Clear data</button></span></div>
+<div class="wrap" id="linkBar" style="padding-bottom:0;display:none"><div class="ok" id="linkTxt" style="margin:0"></div></div>
 <div class="wrap">
 <h1>CEM Calculator — 8-hour TWA</h1>
 <p class="lead">Upload the lab's Certificate of Analysis (CoA), enter the field data and existing controls, then download the full CEM report as PDF or Word, with all appendices attached. Data is saved automatically in this browser.</p>
 
 <!-- 1 REPORT INFO -->
 <div class="sec"><h2>1. Report info</h2><div class="card">
+<h3>Company details (cover page)</h3>
+<div class="co">
+  <div class="logo-box"><div id="logoPrev" class="logo-prev"><span class="muted" style="font-size:12px;text-align:center">No logo</span></div>
+    <div class="row noP" style="margin-top:6px;justify-content:center"><label class="filebtn" style="margin:0">Upload logo<input type="file" id="logoIn" accept="image/png,image/jpeg"></label><button class="sm" id="logoDel" style="display:none">Remove</button></div>
+    <div id="logoName" class="muted" style="font-size:11px;text-align:center;margin-top:4px;word-break:break-all"></div></div>
+  <div class="fg" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+    <div style="grid-column:1/-1"><label>Company name</label><input data-i="consName" placeholder="e.g. Environmental Science (M) Sdn. Bhd."></div>
+    <div style="grid-column:1/-1"><label>Address</label><input data-i="consAddr"></div>
+    <div><label>Tel / fax</label><input data-i="consTel" placeholder="Tel : 03 - … Fax : 03 - …"></div>
+    <div><label>E-mail</label><input data-i="consEmail" placeholder="E-mail: …"></div>
+  </div>
+</div>
+<p class="muted noP" style="font-size:12px;margin:6px 0 14px">Saved as your default. Every new report starts with these company details and logo.</p>
+<h3>Client &amp; monitoring</h3>
 <div class="fg" id="info">
   <div><label>Client</label><input data-i="client"></div>
   <div><label>Client DOSH No.</label><input data-i="clientDosh"></div>
   <div><label>Report No. (ESM)</label><input data-i="reportNo"></div>
   <div><label>DOSH Report No.</label><input data-i="doshReportNo"></div>
   <div><label>Monitoring date</label><input data-i="dates" placeholder="10th – 11th September 2026"></div>
-  <div><label>Location name</label><input data-i="locName"></div>
-  <div><label>Location address</label><input data-i="locAddr"></div>
+  <div style="grid-column:span 2"><label>Location address</label><input data-i="locAddr" placeholder="Site address (shown centred on the cover)"></div>
   <div><label>Hygiene technician</label><input data-i="htName"></div>
   <div><label>HT DOSH Reg. No.</label><input data-i="htReg"></div>
   <div><label>HT position</label><input data-i="htPos"></div>
   <div><label>Working hours</label><input data-i="hours"></div>
   <div><label>CHRA report No.</label><input data-i="chraNo"></div>
-  <div class="span-all"><label>Equipment (pump, calibrator, media, anemometer)</label><textarea data-i="equipment" rows="3" placeholder="One item per line, e.g. Personal sampling pump – SKC AirChek XR5000 (S/N …)"></textarea></div>
+  <div class="span-all"><label>Equipment (pump, calibrator, media, anemometer), shown in Table 4 of the report with photos</label>
+    <div id="equip"></div>
+    <div class="row noP" style="margin-top:10px"><button class="pri" id="bEqAdd">+ Add equipment</button><button id="bEqReset">Reset to default list</button></div></div>
 </div>
-<details><summary>More details (work area, consultant, logo)</summary>
-<div class="fg" style="margin-top:10px">
+<h3 style="margin-top:18px">Work area</h3>
+<div class="fg">
   <div><label>Work area / unit</label><input data-i="area" placeholder="Plant"></div>
   <div><label>Work specification</label><input data-i="workSpec"></div>
   <div><label>No. of workers exposed</label><input data-i="exposed" inputmode="numeric"></div>
-  <div><label>Consultant company</label><input data-i="consName"></div>
-  <div style="grid-column:span 2"><label>Consultant address</label><input data-i="consAddr"></div>
-  <div style="grid-column:span 2"><label>Consultant tel / fax</label><input data-i="consTel"></div>
-  <div style="grid-column:span 2"><label>Consultant e-mail</label><input data-i="consEmail"></div>
-  <div style="grid-column:span 2"><label>Company logo (cover page)</label><div class="row"><label class="filebtn" style="margin:0">Choose image<input type="file" id="logoIn" accept="image/png,image/jpeg"></label><span id="logoName" class="muted" style="font-size:12px"></span></div></div>
-</div></details>
+</div>
 </div></div>
 
 <!-- 2 LAB RESULTS -->
@@ -124,16 +159,20 @@ tr.blank td{opacity:.55}
 </div>
 <div class="ts"><table id="tPar"></table></div>
 
-<h3 style="margin-top:16px">Workers / sampling points</h3>
-<div class="ts"><table id="tPts"></table></div>
-
-<h3 style="margin-top:16px">Sample data</h3>
-<div class="row noP" style="margin-bottom:8px">
-  <button class="pri" id="bAdd">+ Add sample</button>
-  <button id="bClr">Clear all samples</button>
-  <span class="muted" style="font-size:12px">Tip: ↓ in a column header copies the value above into empty cells.</span>
+<h3 style="margin-top:18px">Environmental conditions <span class="muted" style="font-weight:400;font-size:12.5px">(key in once, applies to all samples)</span></h3>
+<div class="fg env" id="env">
+  <div><label>Calibration temp. Tc (°C)</label><input data-env="Tc" inputmode="decimal"></div>
+  <div><label>Calibration pressure Pc (mmHg)</label><input data-env="Pc" inputmode="decimal"></div>
+  <div><label>Site temp. T (°C)</label><input data-env="T" inputmode="decimal"></div>
+  <div><label>Site pressure P (mmHg)</label><input data-env="P" inputmode="decimal"></div>
 </div>
-<div class="ts"><table id="tIn"></table></div>
+
+<h3 style="margin-top:18px">Sample data <span class="muted" style="font-weight:400;font-size:12.5px">(one card per worker + parameter)</span></h3>
+<div id="groups"></div>
+<div class="row noP" style="margin-top:10px">
+  <button class="pri" id="bAdd">+ Add worker / parameter</button>
+  <button id="bClr">Clear all samples</button>
+</div>
 <label class="toggle noP"><input type="checkbox" id="divTotal"><span>Divide TWA by total sampling duration, like the Excel calculator (turn off to always divide by 480 minutes).</span></label>
 <p class="muted" style="font-size:12px;margin:8px 0 0">fc = pump flow rate (L/min) · t = duration (min) · Pc, Tc = pressure (mmHg) &amp; temperature (°C) at calibration · P, T = pressure &amp; temperature during sampling · Mass = CoA result (µg/sample); “&lt;10” = below detection limit</p>
 </div></div>
@@ -192,6 +231,24 @@ tr.blank td{opacity:.55}
 </div></div>
 </div>
 
+<!-- 9 SAVE TO DASHBOARD -->
+<div class="wrap" style="padding-top:0"><div class="sec"><h2>9. Complete &amp; save to dashboard</h2><div class="card">
+<p class="muted" style="margin:0 0 10px;font-size:13px">Records this report in the IH job register on the dashboard, one job per chemical, with the highest TWA vs PEL, the next monitoring due date and next action. Saving again updates the same jobs; it doesn't create duplicates.</p>
+<div class="fg">
+  <div><label>Job status</label><select id="svStatus"><option>Completed</option><option>Reporting</option><option>In progress</option></select></div>
+  <div><label>Person in charge</label><input id="svPic"></div>
+  <div><label>Report date</label><input type="date" id="svDate"></div>
+  <div><label>Request date (optional)</label><input type="date" id="svReq"></div>
+</div>
+<div class="ts" style="margin-top:12px"><table id="svPrev"></table></div>
+<div class="row noP" style="margin-top:12px"><button class="pri" id="bSave">✔ Complete &amp; save to dashboard</button><span id="svMsg" class="muted" style="font-size:13px"></span></div>
+</div></div></div>
+
+<div class="modal" id="mRep"><div class="box">
+  <div class="row" style="justify-content:space-between"><h3 style="margin:0">CEM reports (saved online)</h3><button onclick="document.getElementById('mRep').classList.remove('show')">Close</button></div>
+  <input id="repQ" placeholder="Search report no. or client" style="margin:10px 0">
+  <div class="ts"><table id="repList"></table></div>
+</div></div>
 <div class="modal" id="mDl"><div class="box">
   <h3 style="margin:0">Download full report</h3>
   <p class="muted" style="margin:4px 0 0;font-size:13px">Both include the cover, all sections, Appendix F calculations and your attached appendices.</p>
