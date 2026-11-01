@@ -132,7 +132,7 @@ function groups(){
 const f=(v,d=3)=>v==null||!isFinite(v)?"–":(+v).toFixed(d);
 const twaTxt=g=>g.twa==null?"–":(g.lt?"<":"")+f(g.twa,3);
 const cls=p=>p==null?"":p>=100?"over":p>=50?"warn":"safe";
-const remark=g=>{const b=g.basis||"PEL";return g.pct==null?"–":g.lt?"Below detection limit":g.pct>=100?"Exceeds "+b:g.pct>=50?"Above 50% "+b:g.pct>=10?"Above 10% "+b:"Below 10% "+b};
+const remark=g=>{const b=g.basis||"PEL",sh=g.short?" (short-term, vs MEL)":"";return g.pct==null?"–":(g.lt?"Below detection limit":g.pct>=100?"Exceeds "+b:g.pct>=50?"Above 50% "+b:g.pct>=10?"Above 10% "+b:"Below 10% "+b)+sh};
 const twaLbl=g=>g.short?"C (short-term, < 60 min)":"TWA₈";
 const limCell=g=>g.lim==null?null:g.short?`${g.lim} (MEL)`:String(g.lim);
 

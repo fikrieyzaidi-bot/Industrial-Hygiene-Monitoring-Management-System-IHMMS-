@@ -36,7 +36,7 @@ function analyse(){
   const ndHigh=G.filter(g=>g.cat==="nd"&&g.pct>=10);
   const wl=g=>`Worker ${g.point} (${g.worker}${g.task?", "+g.task:""}) for ${g.param} (${twaTxt(g)} mg/m³, ${pctG(g)} of ${g.basis}${g.short?`, sampled ${f(g.sumT,0)} min`:""})`;
   const shortG=G.filter(g=>g.short&&g.complete),L=!shortG.length?"PEL":shortG.length===G.filter(g=>g.complete).length?"MEL":"applicable limit";
-  return{ndHigh,shortG,L,I,C,G,P,client,params,n,wN:n+" worker"+(n===1?"":"s"),area:(I.area||"workplace").toLowerCase(),rpe,apf,need,worstCat,wl,
+  return{var:st.textVar||{},ndHigh,shortG,L,I,C,G,P,client,params,n,wN:n+" worker"+(n===1?"":"s"),area:(I.area||"workplace").toLowerCase(),rpe,apf,need,worstCat,wl,
     over:G.filter(g=>g.cat==="over"),half:G.filter(g=>g.cat==="half"),ten:G.filter(g=>g.cat==="ten"),low:G.filter(g=>g.cat==="low"),
     pelList:params.map(p=>`${p} (${param(p).pel??"–"} mg/m³)`),eng:[...C.eng,...(C.engOther?[C.engOther]:[])],adm:[...C.adm,...(C.admOther?[C.admOther]:[])]}}
 function freqLine(a){if(a.over.length)return"Repeat personal exposure monitoring within six (6) months, after the improved controls are in place, to confirm that exposure has been reduced below the PEL.";
@@ -55,98 +55,150 @@ function rpeAdvice(h){return{silica:"a half-face respirator with P3 particulate 
   solvent:"a half-face respirator with organic vapour (type A) cartridges and a documented cartridge change-out schedule",gas:"a respirator with a cartridge rated for the specific gas, or supplied air where concentrations may be high",
   isocyanate:"supplied-air respiratory protection during spraying",acid:"a respirator with an acid-gas (type E) or combination cartridge"}[h]}
 
+/* Professional judgement helpers (written as a Certified Professional Industrial Hygienist would reason) */
+const pick=(a,k,arr)=>arr[((a.var&&a.var[k])||0)%arr.length];
+const who=g=>`${g.worker} (${g.point}${g.task?", "+g.task:""})`;
+function cpih(a){ // extra professional considerations, computed once per analysis
+  const G=a.G.filter(g=>g.complete);
+  G.forEach(g=>{g.eq8=g.short&&g.twa!=null?g.twa*g.sumT/480:null;g.eq8pct=g.eq8!=null&&g.pel?g.eq8/g.pel*100:null});
+  const lowCov=st.divTotal?[]:G.filter(g=>!g.short&&g.sumT<360); // under 75% of the shift sampled
+  const mix=[];[...new Set(G.map(g=>g.point))].forEach(pt=>{const sol=G.filter(g=>g.point===pt&&!g.short&&g.pct!=null&&!g.lt&&["solvent"].includes(hazType(g.param)));
+    if(sol.length>=2)mix.push({pt,g:sol[0],gs:sol,em:sol.reduce((s,g)=>s+g.pct/100,0)})});
+  const mixOver=mix.filter(m=>m.em>=1),mixHalf=mix.filter(m=>m.em>=0.5&&m.em<1);
+  const rpf=a.need; // required protection factor = highest exposure / limit
+  return{lowCov,mix,mixOver,mixHalf,rpf}}
+const mixTxt=m=>`${m.g.worker} (${m.pt}): ${m.gs.map(g=>`${g.param} ${pctTxt(g.pct)}`).join(" + ")} = ${m.em.toFixed(2)}`;
+
 const TEXTS=[
- ["exec","1.0 Executive summary",a=>{
-   const ranges=a.P.filter(x=>x.done.length).map(x=>`${x.p} ${rangeTxt(x)}`);
-   let p4;
-   if(a.over.length)p4=`The exposure of ${list(a.over.map(a.wl))} exceeded the Permissible Exposure Limit (PEL). The existing control measures are therefore not adequate for this exposure, and the employer must take immediate action to reduce exposure, review the controls and repeat the monitoring.`;
-   else if(a.half.length)p4=`All results were below the PEL. However, ${list(a.half.map(a.wl))} exceeded half (50%) of the PEL, which indicates that the existing controls need to be improved and monitored more closely.`;
-   else if(a.ten.length||a.ndHigh.length)p4=a.ten.length?`All results were below the PEL; however, ${list(a.ten.map(a.wl))} exceeded 10% of the PEL. In accordance with the Guidelines on Monitoring of Airborne Chemical Hazardous to Health 2022, a further six (6) personal exposure samples should be collected for these parameters to complete the compliance assessment and give a more representative picture of the workers’ exposure.`:`All results were below the PEL. Some results were below the laboratory detection limit, but the detection limit was above 10% of the PEL, so a larger air volume is recommended at the next monitoring to confirm low exposure.`;
-   else p4=`All results were below 10% of the applicable PEL, indicating that exposure is well controlled under the conditions observed during monitoring.`;
-   const s2=a.P.filter(x=>x.s2).map(x=>x.p);
-   const keys=[a.over.length||a.half.length?"improve engineering controls at the source":"maintain the existing controls",
-     a.need>=1||((a.over.length||a.half.length)&&(a.C.rpeUse!=="consistent"||a.C.fit!=="yes"))?"ensure suitable respiratory protection is worn consistently, with fit testing":"continue proper use of PPE",
-     s2.length?`arrange medical surveillance for workers exposed to ${list(s2)}`:"",freqLine(a).split(",")[0].toLowerCase()].filter(Boolean);
-   return `Chemical Exposure Monitoring (CEM) was conducted at ${a.client} by a registered Industrial Hygiene Technician (IHT-1) as recommended in the Chemical Health Risk Assessment (CHRA)${a.I.chraNo?` (Report No.: ${a.I.chraNo})`:""} and in accordance with the Occupational Safety and Health (Use and Standards of Exposure of Chemical Hazardous to Health) Regulations 2000 (USECHH 2000).\n`+
-   `The monitoring assessed the personal exposure of ${a.wN} to ${list(a.params)}${a.C.activities?` during ${lc(a.C.activities.replace(/\.$/,""))}`:` during normal working activities at the ${a.area}`}. Personal air sampling was carried out in the workers’ breathing zone ${a.L==="MEL"?"for less than 60 minutes, so results were compared against the Maximum Exposure Limit (MEL = 3 × PEL) of USECHH 2000.":`over a full 8-hour (480-minute) work shift, and results were compared against the 8-hour Time-Weighted Average (TWA) PEL in Schedule I of USECHH 2000.${a.shortG.length?" "+shortNote(a):""}`}\n`+
-   (ranges.length?`The ${a.L==="MEL"?"short-term":a.L==="PEL"?"8-hour TWA":"measured"} exposure for ${ranges.join("; ")}.\n`:"")+p4+`\n`+
-   `The key recommendations are to ${list(keys)}. Details are given in Sections 6.0 and 7.0.`}],
- ["intro","2.0 Introduction",a=>`${a.I.consName||"The consultant"} has been appointed to conduct a chemical exposure monitoring program at ${a.client}, which is located at ${a.I.locAddr||"the client's premises"}. This report presents the details of personnel exposure monitoring in order to comply with the USECHH Regulations 2000.`],
- ["seg","4.3 Selection of worker from Similar Exposure Group (SEG)",a=>`Workers selected were those nearest to the source, with the highest duration and frequency of exposure, whose work practice exposed them directly to the chemicals, taking available control measures into account.${a.G.some(g=>g.task)?" The workers monitored were: "+list([...new Set(a.G.map(g=>`${g.worker} (${g.point})${g.task?" – "+g.task:""}${g.desc?" ("+lc(noDot(g.desc))+")":""}`))])+".":""}`],
- ["just","4.4 Justification on monitoring duration and number of samples",a=>`Results are compared with the 8-hour Time Weighted Average limit (PEL-TWA) stated in Schedule I of USECHH 2000: ${list(a.pelList)}. Monitoring used a full-period consecutive samples strategy over the entire 8-hour shift, with the personal sampling pump positioned in the worker’s breathing zone.${a.shortG.length?" "+shortNote(a):""}`],
- ["d1","6.1 Chemical Exposure Monitoring Results",a=>{
-   const out=[`CEM was conducted to assess the personal exposure of ${a.wN} to ${list(a.params)} during normal work activities at ${a.client}. The results are discussed by parameter below, using the following action levels: above the PEL (immediate action), above 50% of the PEL (controls to be improved and monitoring at least every 12 months), above 10% of the PEL (additional sampling under the 2022 Guidelines) and below 10% of the PEL (exposure well controlled).`];
-   a.P.forEach(x=>{if(!x.done.length){out.push(`${x.p}: results are incomplete because field data is missing, so no conclusion can be drawn yet.`);return}
-     const lt=x.done.filter(g=>g.lt);
-     let s=`${x.p} (PEL ${x.pel} mg/m³${param(x.p).ppm?`, ${param(x.p).ppm} ppm`:""}${x.done.some(g=>g.short)?`; MEL ${mel(param(x.p)).mg} mg/m³`:""}): exposure ${rangeTxt(x)}`+(x.done.length>1?`, with the highest exposure recorded for ${x.worst.worker} (${x.worst.point})${x.worst.task?", "+x.worst.task:""}.`:".");
-     const sh=x.done.filter(g=>g.short);if(sh.length)s+=` ${list(sh.map(g=>g.point))} ${sh.length>1?"were":"was"} sampled for less than 60 minutes, so ${sh.length>1?"these results are":"this result is"} short-term and compared with the MEL (3 × PEL).`;
-     const byCat=c=>x.done.filter(g=>g.cat===c).map(g=>`${g.point}`);
-     if(x.top==="over")s+=` The result for ${list(byCat("over"))} exceeded the PEL, so the existing controls do not adequately protect the worker${byCat("over").length>1?"s":""} and immediate action is required.`;
-     else if(x.top==="half")s+=` Results for ${list(byCat("half"))} were above half of the PEL, which shows that exposure is significant and existing controls should be strengthened.`;
-     else if(x.top==="ten")s+=` Results for ${list(byCat("ten"))} were above 10% of the PEL; a further six (6) samples are recommended to confirm compliance.`;
-     else if(x.top==="low")s+=` All quantified results were below 10% of the PEL.`;
-     if(lt.length){const ndG=x.done.filter(g=>g.cat==="nd");s+=` ${ndG.length?`For ${list(ndG.map(g=>g.point))} the laboratory result${ndG.length>1?"s were":" was"} below the detection limit (“<”), so the reported TWA is an upper bound and the actual exposure is lower.`:"Some individual samples were below the detection limit; the detection limit was used in the calculation, so these TWAs are conservative."}`;
-       const hi=ndG.filter(g=>g.pct>=10);if(hi.length)s+=` Because this upper bound (${pctTxt(hi[0].pct)} of the PEL) is above 10% of the PEL, the result cannot confirm that exposure is below 10% of the PEL. Longer sampling times or a higher flow rate (larger air volume) are recommended next time to lower the detection limit.`}
-     if(x.skin)s+=` ${x.p} carries a skin notation in Schedule I, so skin absorption may add to the total dose and skin protection is important.`;
-     if(x.s2)s+=` ${x.p} is listed in Schedule II of USECHH 2000 (chemicals for which medical surveillance is appropriate).`;
+ ["exec","1.0 Executive summary",a=>{const x=cpih(a),I=a.I;
+   const ranges=a.P.filter(p=>p.done.length).map(p=>`${p.p} ${rangeTxt(p)}`);
+   const open=pick(a,"exec",[
+     `Chemical Exposure Monitoring (CEM) was conducted at ${a.client}${I.dates?` on ${I.dates}`:""} by a registered Industrial Hygiene Technician (IHT-1), as recommended in the Chemical Health Risk Assessment (CHRA)${I.chraNo?` (Report No.: ${I.chraNo})`:""} and in accordance with the Occupational Safety and Health (Use and Standards of Exposure of Chemical Hazardous to Health) Regulations 2000 (USECHH 2000).`,
+     `This report presents the findings of the Chemical Exposure Monitoring (CEM) carried out at ${a.client}${I.dates?` on ${I.dates}`:""}. The monitoring was performed by a registered Industrial Hygiene Technician (IHT-1) to fulfil the recommendation of the Chemical Health Risk Assessment (CHRA)${I.chraNo?` (Report No.: ${I.chraNo})`:""} and the monitoring requirement under Regulation 26 of USECHH 2000.`,
+     `At the request of ${a.client}, personal exposure monitoring was undertaken${I.dates?` on ${I.dates}`:""} to quantify the inhalation exposure of workers to chemicals hazardous to health and to determine compliance with USECHH 2000. The work was carried out by a registered Industrial Hygiene Technician (IHT-1) following the recommendation of the Chemical Health Risk Assessment (CHRA)${I.chraNo?` (Report No.: ${I.chraNo})`:""}.`]);
+   const scope=`The assessment covered ${a.wN} exposed to ${list(a.params)}${a.C.activities?` during ${lc(a.C.activities.replace(/\.$/,""))}`:` during normal working activities at the ${a.area}`}. Personal air samples were collected in the workers’ breathing zone ${a.L==="MEL"?"for less than 60 minutes, so the results were evaluated against the Maximum Exposure Limit (MEL = 3 × PEL) of USECHH 2000.":`and evaluated against the 8-hour Time-Weighted Average (TWA) PEL in Schedule I of USECHH 2000.${a.shortG.length?" "+shortNote(a):""}`}`;
+   const res=ranges.length?`The ${a.L==="MEL"?"short-term":a.L==="PEL"?"8-hour TWA":"measured"} exposure for ${ranges.join("; ")}.`:"";
+   let judge;
+   if(a.over.length)judge=`In my professional judgement, the exposure of ${list(a.over.map(a.wl))} is not acceptable: it exceeded the Permissible Exposure Limit (PEL), so the existing control measures do not adequately protect these workers. The employer must act immediately to reduce exposure, verify the effectiveness of the controls and repeat the monitoring.`;
+   else if(a.half.length)judge=`All results were below the PEL, so the employer is in compliance on the day of monitoring. However, ${list(a.half.map(a.wl))} exceeded half (50%) of the PEL. Given normal day-to-day variability in exposure, there is a realistic probability that the PEL is exceeded on other days, so the existing controls should be strengthened rather than simply maintained.`;
+   else if(a.ten.length)judge=`All results were below the PEL. However, ${list(a.ten.map(a.wl))} exceeded 10% of the PEL, which means compliance cannot yet be concluded with confidence from a single round of sampling. A further six (6) personal samples are needed for a statistical compliance decision, in accordance with the Guidelines on Monitoring of Airborne Chemical Hazardous to Health 2022.`;
+   else if(a.ndHigh.length)judge=`All results were below the PEL. Some results were below the laboratory detection limit, but because the detection limit itself corresponds to more than 10% of the PEL, low exposure cannot be confirmed; a larger air volume is needed at the next monitoring.`;
+   else judge=`All results were below 10% of the applicable PEL. Exposure is considered well controlled under the conditions observed, and the existing control measures are judged adequate.`;
+   const extra=[];
+   if(x.mixOver.length)extra.push(`Because the solvents measured act on the same target organ (central nervous system), their combined (additive) effect was also assessed: the mixture exceeded unity for ${list(x.mixOver.map(mixTxt))}, which must be treated as an over-exposure even though each chemical alone was below its PEL.`);
+   else if(x.mixHalf.length)extra.push(`The combined (additive) effect of the solvents measured was above half of unity for ${list(x.mixHalf.map(mixTxt))}, which supports strengthening the controls.`);
+   const sh=a.shortG.filter(g=>g.eq8!=null);if(sh.length)extra.push(`Short-term results only show compliance with the MEL; they do not by themselves demonstrate compliance with the 8-hour PEL.`);
+   const s2=a.P.filter(p=>p.s2).map(p=>p.p);
+   const keys=[a.over.length||a.half.length||x.mixOver.length?"improve engineering controls at the source, following the hierarchy of controls":"maintain the existing controls and their maintenance programme",
+     a.need>=1||((a.over.length||a.half.length)&&(a.C.rpeUse!=="consistent"||a.C.fit!=="yes"))?"ensure suitable respiratory protection is worn consistently, with fit testing, as an interim measure":"continue proper use of PPE",
+     s2.length?`arrange medical surveillance for workers exposed to ${list(s2)}`:"",freqLine(a).split(",")[0].toLowerCase(),"update the CHRA with these findings"].filter(Boolean);
+   return [open,scope,res,[judge,...extra].join(" "),`The key recommendations are to ${list(keys)}. Details are given in Sections 6.0 and 7.0.`].filter(Boolean).join("\n")}],
+ ["intro","2.0 Introduction",a=>pick(a,"intro",[
+   `${a.I.consName||"The consultant"} has been appointed to conduct a chemical exposure monitoring program at ${a.client}, which is located at ${a.I.locAddr||"the client's premises"}. This report presents the details of personnel exposure monitoring in order to comply with the USECHH Regulations 2000.`,
+   `${a.client}, located at ${a.I.locAddr||"the client's premises"}, appointed ${a.I.consName||"the consultant"} to carry out chemical exposure monitoring of its workers. The purpose is to measure personal exposure to the chemicals identified in the CHRA, compare it with the limits in USECHH 2000, and advise on the adequacy of the existing controls.`])],
+ ["seg","4.3 Selection of worker from Similar Exposure Group (SEG)",a=>pick(a,"seg",[
+   `Workers selected were those nearest to the source, with the highest duration and frequency of exposure, whose work practice exposed them directly to the chemicals, taking available control measures into account.`,
+   `Following a worst-case approach, the workers selected from each Similar Exposure Group (SEG) were those expected to have the highest exposure: closest to the emission source, with the longest and most frequent exposure, and with direct handling of the chemicals, after considering the controls in place.`])+(a.G.some(g=>g.task)?" The workers monitored were: "+list([...new Set(a.G.map(g=>`${g.worker} (${g.point})${g.task?" – "+g.task:""}${g.desc?" ("+lc(noDot(g.desc))+")":""}`))])+".":"")],
+ ["just","4.4 Justification on monitoring duration and number of samples",a=>{const x=cpih(a);
+   return `Results are compared with the 8-hour Time Weighted Average limit (PEL-TWA) stated in Schedule I of USECHH 2000: ${list(a.pelList)}. `+pick(a,"just",[
+   `Monitoring used a full-period consecutive samples strategy over the work shift, with the personal sampling pump positioned in the worker’s breathing zone.`,
+   `A full-period, consecutive-sample strategy was used so that the samples together represent the worker’s exposure over the shift, with the sampler fixed in the breathing zone (within 30 cm of the nose and mouth).`])+
+   (x.lowCov.length?` For ${list(x.lowCov.map(g=>`${g.point} – ${g.param} (${f(g.sumT,0)} min)`))}, less than 75% of the 8-hour shift was sampled; the TWA assumes no exposure during the unsampled period, so these results may underestimate the true 8-hour exposure.`:"")+
+   (a.shortG.length?" "+shortNote(a):"")}],
+ ["d1","6.1 Chemical Exposure Monitoring Results",a=>{const x=cpih(a);
+   const out=[pick(a,"d1",[
+     `CEM was conducted to assess the personal exposure of ${a.wN} to ${list(a.params)} during normal work activities at ${a.client}. The results are discussed by parameter below, using the following action levels: above the PEL (immediate action), above 50% of the PEL (controls to be improved and monitoring at least every 12 months), above 10% of the PEL (additional sampling under the 2022 Guidelines) and below 10% of the PEL (exposure well controlled).`,
+     `The personal exposure results for ${a.wN} at ${a.client} are interpreted below for each chemical. Each result is placed in one of four action bands: above the PEL (over-exposure, immediate action), 50–100% of the PEL (significant exposure, controls to be improved), 10–50% of the PEL (further sampling needed to confirm compliance) and below 10% of the PEL (well controlled).`])];
+   a.P.forEach(p=>{if(!p.done.length){out.push(`${p.p}: results are incomplete because field data is missing, so no conclusion can be drawn yet.`);return}
+     const lt=p.done.filter(g=>g.lt);
+     let s=`${p.p} (PEL ${p.pel} mg/m³${param(p.p).ppm?`, ${param(p.p).ppm} ppm`:""}${p.done.some(g=>g.short)?`; MEL ${mel(param(p.p)).mg} mg/m³`:""}): exposure ${rangeTxt(p)}`+(p.done.length>1?`, with the highest exposure recorded for ${who(p.worst)}.`:".");
+     const byCat=c=>p.done.filter(g=>g.cat===c).map(g=>g.point);
+     if(p.top==="over")s+=` The result for ${list(byCat("over"))} exceeded the limit, so the existing controls do not adequately protect the worker${byCat("over").length>1?"s":""} and immediate action is required.`;
+     else if(p.top==="half")s+=` Results for ${list(byCat("half"))} were above half of the limit. This is significant exposure: with typical day-to-day variation, exceedance on other days cannot be ruled out, so controls should be strengthened.`;
+     else if(p.top==="ten")s+=` Results for ${list(byCat("ten"))} were above 10% of the limit; a further six (6) samples are recommended to reach a statistical compliance decision.`;
+     else if(p.top==="low")s+=` All quantified results were below 10% of the limit, indicating good control.`;
+     p.done.filter(g=>g.short&&g.eq8!=null).forEach(g=>{s+=` ${g.point} was sampled for only ${f(g.sumT,0)} minutes, so the result is a short-term exposure compared with the MEL (3 × PEL). If no further exposure occurred during the rest of the shift, the equivalent 8-hour TWA would be ${(g.lt?"<":"")+f(g.eq8,3)} mg/m³ (${(g.lt?"<":"")+pctTxt(g.eq8pct)} of the 8-hour PEL); full-shift sampling is needed to confirm the 8-hour exposure.`});
+     if(lt.length){const ndG=p.done.filter(g=>g.cat==="nd");s+=` ${ndG.length?`For ${list(ndG.map(g=>g.point))} the laboratory result${ndG.length>1?"s were":" was"} below the detection limit (“<”), so the reported value is an upper bound and the actual exposure is lower.`:"Some individual samples were below the detection limit; the detection limit was used in the calculation, so these results are conservative."}`;
+       const hi=ndG.filter(g=>g.pct>=10);if(hi.length)s+=` Because this upper bound (${pctTxt(hi[0].pct)} of the limit) is above 10% of the limit, the result cannot confirm low exposure. A longer sampling time or higher flow rate (larger air volume) is recommended next time to lower the detection limit.`}
+     if(p.skin)s+=` ${p.p} carries a skin notation in Schedule I, so skin absorption may add to the total dose; airborne results alone may underestimate the body burden, and skin protection is essential.`;
+     if(p.s2)s+=` ${p.p} is listed in Schedule II of USECHH 2000, so medical surveillance is required for workers whose exposure is significant.`;
      out.push(s)});
+   if(x.mix.length)out.push(`Combined exposure: ${list(a.params.filter(n=>hazType(n)==="solvent"))} have similar toxic effects (central nervous system depression and irritation), so their effects are treated as additive. Using the mixture formula (C1/L1 + C2/L2 + … ≤ 1), the combined exposure index was ${list(x.mix.map(mixTxt))}. ${x.mixOver.length?"An index of 1 or more means the mixture exceeds its limit, even though the individual chemicals did not.":x.mixHalf.length?"An index above 0.5 indicates significant combined exposure.":"All indices were below 0.5, so the combined exposure is acceptable."}`);
    return out.join("\n")}],
  ["d2","6.2 Factors Contributing Towards the Results and Adequacy of Existing Control Measures",a=>{
-   const C=a.C,out=[];
-   out.push(`The results were influenced by the nature of the work activities${C.activities?` (${lc(C.activities.replace(/\.$/,""))})`:""}, the duration and frequency of exposure, work practices and the working environment.${C.obs?" Site observations during monitoring: "+lc(noDot(C.obs))+".":""}`);
-   out.push(a.eng.length?`Engineering controls in place: ${list(a.eng.map(lc))}.`:`No engineering controls were recorded at the monitored work areas.`);
+   const C=a.C,x=cpih(a),out=[];
+   const vap=a.P.some(p=>["solvent","gas","isocyanate","acid"].includes(p.haz)),partOnly=["ffp","hfp"].includes(C.rpe);
+   out.push(pick(a,"d2",[`The results were influenced by the nature of the work activities${C.activities?` (${lc(C.activities.replace(/\.$/,""))})`:""}, the duration and frequency of exposure, work practices and the working environment.`,
+     `Several factors determine the exposure levels measured: the type of work${C.activities?` (${lc(C.activities.replace(/\.$/,""))})`:""}, how long and how often workers are near the source, their individual work practices, and the general ventilation of the work area.`])+(C.obs?" Site observations during monitoring: "+lc(noDot(C.obs))+".":""));
+   out.push(a.eng.length?`Engineering controls in place: ${list(a.eng.map(lc))}.`:`No engineering controls were recorded at the monitored work areas, so exposure is controlled mainly by administrative measures and PPE, which are the least reliable levels of the hierarchy of controls.`);
    if(a.adm.length)out.push(`Administrative controls in place: ${list(a.adm.map(lc))}.`);
-   if(C.rpe){let r=`Respiratory protection: ${lc(a.rpe[0])}`+(a.apf>1?` (assigned protection factor ${a.apf})`:"")+`${C.rpeUse==="consistent"?", worn consistently":C.rpeUse==="partial"?", but not worn consistently":C.rpeUse==="no"?", but not worn during the work":""}${C.fit==="yes"?", with fit testing done":C.fit==="no"?", without fit testing":""}.`;
-     if(a.need>=1){r+=a.apf&&a.apf>a.need&&C.rpeUse==="consistent"&&C.fit==="yes"?` Since the highest exposure was ${a.need.toFixed(1)} times the PEL, this RPE gives adequate protection, provided it is used properly, but it must be treated as a temporary measure until engineering controls are improved.`
-       :` The highest exposure was ${a.need.toFixed(1)} times the PEL. The current RPE ${a.apf&&a.apf>a.need?"could give enough protection on paper, but its effectiveness cannot be relied on":"does not give enough protection"} ${C.rpeUse!=="consistent"?"because it is not worn consistently":C.fit!=="yes"?"because no fit test has been done":"for this exposure level"}.`}
-     else if((a.half.length||a.ndHigh.length||a.ten.length)&&(C.rpeUse!=="consistent"||C.fit!=="yes"))r+=` Although exposure was below the PEL, ${a.half.length?"it exceeded half of the PEL, so ":""}RPE should be worn consistently and fit tested as an additional safeguard while engineering controls are improved.`;
+   if(C.rpe){let r=`Respiratory protection: ${lc(a.rpe[0])}`+(a.apf>1?`, assigned protection factor ${a.apf}`:"")+`${C.rpeUse==="consistent"?", worn consistently":C.rpeUse==="partial"?", but not worn consistently":C.rpeUse==="no"?", but not worn during the work":""}${C.fit==="yes"?", with fit testing done":C.fit==="no"?", without fit testing":""}.`;
+     if(a.need>=1){r+=` The required protection factor (highest exposure ÷ limit) is ${a.need.toFixed(1)}. `+(a.apf&&a.apf>a.need&&C.rpeUse==="consistent"&&C.fit==="yes"?`The RPE in use provides adequate protection on paper, provided it is used properly, but it must be treated as a temporary measure until engineering controls are improved.`
+       :`The current RPE ${a.apf&&a.apf>a.need?"could give enough protection on paper, but its effectiveness cannot be relied on":"does not give enough protection"} ${C.rpeUse!=="consistent"?"because it is not worn consistently":C.fit!=="yes"?"because no fit test has been done":"for this exposure level"}.`)}
+     else if(!(vap&&partOnly)&&(a.half.length||a.ndHigh.length||a.ten.length)&&(C.rpeUse!=="consistent"||C.fit!=="yes"))r+=` Although exposure was below the PEL, ${a.half.length?"it exceeded half of the PEL, so ":""}RPE should be worn consistently and fit tested as an additional safeguard while engineering controls are improved.`;
      out.push(r)}
-   else out.push("The type of respiratory protection used was not recorded.");
+   else out.push("The type of respiratory protection used was not recorded, so its contribution to protecting the workers cannot be assessed.");
+
    if(C.ppe.length)out.push(`Other PPE in use: ${list(C.ppe.map(lc))}.`);
-   const gaps=[];a.P.forEach(x=>{if(x.top&&x.top!=="low"){if((x.haz==="dust"||x.haz==="silica")&&!a.eng.some(e=>/wet|water|spray|lev|exhaust|collector|enclos/i.test(e)))gaps.push(`no dust suppression or extraction was recorded for ${x.p}`);
-     if((x.haz==="solvent"||x.haz==="fume"||x.haz==="isocyanate")&&!a.eng.some(e=>/lev|exhaust|extraction|booth|enclos/i.test(e)))gaps.push(`no local exhaust ventilation was recorded for ${x.p}`);
-     if(x.skin&&!a.C.ppe.some(p=>/glove/i.test(p)))gaps.push(`no chemical-resistant gloves were recorded although ${x.p} has a skin notation`)}});
+   if(vap&&partOnly)out.push(`Important: the respirator in use (${lc(a.rpe[0])}) is a particulate filter and gives no protection against ${list(a.P.filter(p=>["solvent","gas","isocyanate","acid"].includes(p.haz)).map(p=>p.p))} vapour or gas, so it should not be counted as a control for these chemicals.`);
+   const skinP=a.P.filter(p=>p.skin);if(skinP.length&&C.ppe.some(q=>/cotton|fabric|cloth|knit/i.test(q)))out.push(`The gloves recorded (${list(C.ppe.filter(q=>/glove/i.test(q)).map(lc))}) are not chemical-resistant; cotton or fabric gloves absorb solvents and can increase skin contact with ${list(skinP.map(p=>p.p))}. Gloves of a material rated for these chemicals (for example nitrile or Viton, as stated in the safety data sheet) should be used.`);
+   const gaps=[];a.P.forEach(p=>{if(p.top&&p.top!=="low"){if((p.haz==="dust"||p.haz==="silica")&&!a.eng.some(e=>/wet|water|spray|lev|exhaust|collector|enclos/i.test(e)))gaps.push(`no dust suppression or extraction was recorded for ${p.p}`);
+     if((p.haz==="solvent"||p.haz==="fume"||p.haz==="isocyanate")&&!a.eng.some(e=>/lev|exhaust|extraction|booth|enclos/i.test(e)))gaps.push(`no local exhaust ventilation was recorded for ${p.p}`)}
+     if(p.skin&&!a.C.ppe.some(q=>/glove/i.test(q)))gaps.push(`no chemical-resistant gloves were recorded although ${p.p} has a skin notation`)});
    let verdict;
-   if(a.worstCat==="over")verdict="Overall, the existing control measures are not adequate: at least one worker was exposed above the PEL.";
+   if(a.worstCat==="over"||x.mixOver.length)verdict="Overall, the existing control measures are not adequate: at least one worker was exposed above the limit.";
    else if(a.worstCat==="half")verdict="Overall, the existing control measures keep exposure below the PEL but are only partially adequate, as exposure exceeded half of the PEL.";
    else if(a.worstCat==="ten")verdict="Overall, the existing control measures are generally adequate, as all exposures were below half of the PEL; they should be maintained and verified through the additional sampling.";
    else if(a.worstCat==="low"||a.worstCat==="nd")verdict="Overall, the existing control measures are adequate and effective under the conditions observed, and should be maintained.";
    else verdict="The adequacy of the existing controls will be assessed once all results are complete.";
    out.push(verdict+(gaps.length?` Gaps noted: ${list(gaps)}.`:""));
+   out.push("These conclusions apply to the conditions on the day of monitoring. If production rate, materials, work methods or ventilation differ on other days, exposure may also differ, and the employer should confirm that the monitoring day was representative of normal operation.");
    return out.join("\n")}],
- ["d3","6.3 Justification on Sampling Strategy",a=>`Personal air sampling was conducted on ${a.wN} considered representative of the work activities with potential exposure. Sampling over a full 8-hour (480-minute) shift allowed assessment against the 8-hour TWA PEL, and personal sampling in the breathing zone represents the actual exposure during normal work.${a.shortG.length?" "+shortNote(a):""}`],
- ["r1","7.1 Action to Be Taken",a=>{
-   const B=[],need=a.P.filter(x=>x.top&&x.top!=="low"&&x.top!=="nd"),fam=h=>({silica:"part",dust:"part",fume:"part"}[h]||h),rank={silica:3,fume:2,dust:1};
-   const hz=[];(need.length?need:a.P).forEach(x=>{const i=hz.findIndex(h=>fam(h)===fam(x.haz));if(i<0)hz.push(x.haz);else if((rank[x.haz]||0)>(rank[hz[i]]||0))hz[i]=x.haz});
-   const hzAll=[];a.P.forEach(x=>{const i=hzAll.findIndex(h=>fam(h)===fam(x.haz));if(i<0)hzAll.push(x.haz);else if((rank[x.haz]||0)>(rank[hzAll[i]]||0))hzAll[i]=x.haz});
-   if(a.over.length)B.push(`Immediate action: reduce the exposure of ${list(a.over.map(g=>`${g.worker} (${g.point})`))} below the PEL. Until engineering improvements are complete, enforce suitable respiratory protection in the affected area.`);
+ ["d3","6.3 Justification on Sampling Strategy",a=>{const x=cpih(a),tt=a.G.filter(g=>g.complete).map(g=>g.sumT),mn=Math.min(...tt),mx=Math.max(...tt);
+   return pick(a,"d3",[`Personal air sampling was conducted on ${a.wN} considered representative of the work activities with potential exposure. Personal sampling in the breathing zone represents the actual inhalation exposure during normal work.`,
+     `The sampling strategy targeted ${a.wN} selected as the highest-exposed members of their Similar Exposure Groups, so the results represent a reasonable worst case for each group. Breathing-zone sampling measures what the worker actually inhales, rather than the general air in the area.`])+
+   (tt.length?` Total sampling time per worker ranged from ${f(mn,0)} to ${f(mx,0)} minutes${mx>=360?`; the full-shift samples (6 hours or more) are sufficient to assess the 8-hour TWA`:""}.`:"")+
+   (x.lowCov.length?` Sampling covered less than 75% of the shift for ${list(x.lowCov.map(g=>g.point))}; future monitoring should cover as much of the shift as practicable.`:"")+
+   (a.shortG.length?" "+shortNote(a):"")+
+   ` Monitoring on a single day gives a snapshot of exposure; to judge long-term compliance with confidence, results should be supported by repeat monitoring as recommended in Section 7.0.`}],
+ ["r1","7.1 Action to Be Taken",a=>{const x=cpih(a);
+   const B=[],need=a.P.filter(p=>p.top&&p.top!=="low"&&p.top!=="nd"),fam=h=>({silica:"part",dust:"part",fume:"part"}[h]||h),rank={silica:3,fume:2,dust:1};
+   const hz=[];(need.length?need:a.P).forEach(p=>{const i=hz.findIndex(h=>fam(h)===fam(p.haz));if(i<0)hz.push(p.haz);else if((rank[p.haz]||0)>(rank[hz[i]]||0))hz[i]=p.haz});
+   const hzAll=[];a.P.forEach(p=>{const i=hzAll.findIndex(h=>fam(h)===fam(p.haz));if(i<0)hzAll.push(p.haz);else if((rank[p.haz]||0)>(rank[hzAll[i]]||0))hzAll[i]=p.haz});
+   if(a.over.length||x.mixOver.length)B.push(`Immediate action: reduce the exposure of ${list([...new Set([...a.over.map(g=>`${g.worker} (${g.point})`),...x.mixOver.map(m=>`${m.g.worker} (${m.pt})`)])])} below the limit. Until engineering improvements are complete, enforce suitable respiratory protection in the affected area.`);
+   if(need.some(p=>p.haz==="solvent")&&(a.over.length||a.half.length||x.mixOver.length))B.push("Elimination / substitution: review whether the solvent-based products can be replaced with water-based, high-solids or lower-toxicity alternatives, which is the most effective control under the hierarchy of controls.");
    if(need.length)hz.forEach(h=>B.push(`Engineering control: ${engAdvice(h)}`));
    else B.push("Maintain the existing engineering controls in good working condition and keep them in use during all work activities.");
-   if(a.eng.some(e=>/lev|exhaust|collector|booth/i.test(e))||need.some(x=>x.haz!=="gas"))B.push("Ensure all local exhaust ventilation is maintained, and examined and tested by a competent person at intervals not exceeding 12 months, with records kept.");
+   if(a.eng.some(e=>/lev|exhaust|collector|booth/i.test(e))||need.some(p=>p.haz!=="gas"))B.push("Ensure all local exhaust ventilation is maintained, and examined and tested by a competent person at intervals not exceeding 12 months, with records kept.");
    B.push(`Administrative control: ${[a.over.length||a.half.length?"limit the time each worker spends at the highest-exposure tasks through job rotation":"",
      "keep the safe work procedures up to date and make sure they are followed","maintain good housekeeping by wet cleaning or vacuuming rather than dry sweeping",
      "give workers information, instruction and training on the chemical hazards, the monitoring results and the correct use of controls and PPE (USECHH 2000, Part VII, Regulation 22)"].filter(Boolean).join("; ")}.`);
    (need.length?hz:hzAll.slice(0,1)).forEach(h=>{const ok=a.C.rpe&&a.apf&&a.apf>a.need&&a.C.rpeUse==="consistent"&&a.C.fit==="yes";
-     B.push(`Respiratory protection: ${ok?"continue the current RPE programme, ":""}provide ${rpeAdvice(h)} for the affected workers${a.need>=1||a.C.fit!=="yes"?", with fit testing for each wearer":""}, plus training, a cleaning and storage routine, and supervision to ensure it is worn throughout the exposure.`)});
-   a.P.filter(x=>x.skin).forEach(x=>B.push(`Skin protection: ${x.p} can be absorbed through the skin. Provide suitable chemical-resistant gloves and protective clothing, and enforce washing before eating, drinking or smoking.`));
-   const s2=a.P.filter(x=>x.s2);if(s2.length)B.push(`Health surveillance: ${list(s2.map(x=>x.p))} ${s2.length>1?"are":"is"} listed in Schedule II of USECHH 2000. Arrange medical surveillance by a registered Occupational Health Doctor (OHD) for exposed workers under Regulation 27${s2.some(x=>x.haz==="silica")?", including chest X-ray and lung function (spirometry) for workers exposed to crystalline silica":""}, and keep the records.`);
+     B.push(`Respiratory protection: ${ok?"continue the current RPE programme, ":""}provide ${rpeAdvice(h)} for the affected workers${a.need>=1?` (required protection factor at least ${Math.ceil(a.need)})`:""}${a.need>=1||a.C.fit!=="yes"?", with fit testing for each wearer":""}, plus training, a cleaning and storage routine, and supervision to ensure it is worn throughout the exposure.`)});
+   a.P.filter(p=>p.skin).forEach(p=>B.push(`Skin protection: ${p.p} can be absorbed through the skin. Provide suitable chemical-resistant gloves and protective clothing, and enforce washing before eating, drinking or smoking.`));
+   const s2=a.P.filter(p=>p.s2);if(s2.length)B.push(`Health surveillance: ${list(s2.map(p=>p.p))} ${s2.length>1?"are":"is"} listed in Schedule II of USECHH 2000. Arrange medical surveillance by a registered Occupational Health Doctor (OHD) for exposed workers under Regulation 27${s2.some(p=>p.haz==="silica")?", including chest X-ray and lung function (spirometry) for workers exposed to crystalline silica":""}, and keep the records.`);
+   if(a.shortG.length)B.push(`Short-duration samples: repeat the monitoring for ${list(a.shortG.map(g=>`${g.point} (${g.param})`))} over the full shift, so the 8-hour TWA can be compared with the PEL; if the task genuinely lasts less than an hour per day, document the task duration and frequency to support the short-term assessment.`);
+   if(x.lowCov.length)B.push(`Sampling coverage: at the next monitoring, sample at least 75% of the shift for ${list(x.lowCov.map(g=>g.point))}.`);
    B.push(`Further monitoring: ${freqLine(a)}`);
-   B.push("Communicate these results to the workers and to the CHRA assessor, so that the CHRA can be reviewed and updated with the findings of this monitoring.");
+   B.push("Communicate these results to the workers and to the CHRA assessor, so that the CHRA can be reviewed and the exposure rating updated with the findings of this monitoring.");
    return B.map(b=>"• "+b).join("\n")}],
- ["concl","8.0 Conclusion",a=>{
-   const s=a.over.length?`The monitoring results showed that ${list(a.over.map(a.wl))} exceeded the PEL stipulated in Schedule I of the USECHH Regulations 2000. The existing control measures are not adequate for these exposures and must be improved without delay, followed by repeat monitoring to confirm that exposure is below the PEL.`
+ ["concl","8.0 Conclusion",a=>{const x=cpih(a);
+   const s=a.over.length||x.mixOver.length?`The monitoring results showed that ${list([...a.over.map(a.wl),...x.mixOver.map(m=>`the combined solvent exposure of ${m.g.worker} (${m.pt}, index ${m.em.toFixed(2)})`)])} exceeded the limit stipulated in USECHH Regulations 2000. The existing control measures are not adequate for these exposures and must be improved without delay, followed by repeat monitoring to confirm that exposure is below the limit.`
      :a.half.length?`The monitoring results showed that all concentrations were below the PEL stipulated in Schedule I of the USECHH Regulations 2000, but ${list(a.half.map(a.wl))} exceeded half of the PEL. The existing controls should be strengthened and exposure monitored at least every twelve (12) months.`
      :`The monitoring results showed that the concentrations of ${list(a.params.map(p=>p.toLowerCase()))} during monitoring were below the PEL stipulated in Schedule I of the USECHH Regulations 2000, indicating that the existing control measures were generally adequate in controlling workers’ exposure during the monitoring period.`+(a.ten.length?" However, selected results were above 10% of the applicable PEL. Therefore, six (6) additional personal exposure samples are recommended in accordance with the applicable DOSH guidelines to further assess the workers’ exposure profile and confirm compliance.":"");
-   return s+`\nRecommendations as described in Section 7.0 were made in order to comply with the USECHH Regulations 2000. The objectives of the exposure monitoring conducted at ${a.client} have been fulfilled.`}]];
+   return s+(a.shortG.length?" Results from samples shorter than 60 minutes were assessed against the MEL and should be confirmed by full-shift sampling.":"")+`\nRecommendations as described in Section 7.0 were made in order to comply with the USECHH Regulations 2000. The objectives of the exposure monitoring conducted at ${a.client} have been fulfilled.`}]];
 const dd=s=>String(s).replace(/(^|[^.])\.\.(?!\.)/g,"$1.");
 const textOf=k=>{const t=TEXTS.find(x=>x[0]===k);if(st.text[k]!=null)return st.text[k];const a=analyse();return dd(limWords(t[2](a),a))};
 function renderTexts(softly){
   if(softly){TEXTS.forEach(([k])=>{const el=$(`[data-tx="${k}"]`);if(el&&st.text[k]==null&&document.activeElement!==el)el.value=textOf(k)});return}
   $("#texts").innerHTML=TEXTS.map(([k,t])=>`<div class="tx"><div class="row"><label style="margin:0;font-weight:600;color:var(--ink)">${t}</label><button class="sm noP" data-txr="${k}">Rewrite</button></div><textarea data-tx="${k}"></textarea></div>`).join("");
   TEXTS.forEach(([k])=>{const el=$(`[data-tx="${k}"]`);el.value=textOf(k);el.style.height=Math.min(420,Math.max(110,el.value.length/4))+"px";el.oninput=()=>{st.text[k]=el.value;save()}});
-  $$("[data-txr]").forEach(b=>b.onclick=()=>{delete st.text[b.dataset.txr];save();$(`[data-tx="${b.dataset.txr}"]`).value=textOf(b.dataset.txr)});
+  $$("[data-txr]").forEach(b=>b.onclick=()=>{const k=b.dataset.txr,el=$(`[data-tx="${k}"]`),before=el.value;
+    st.textVar=st.textVar||{};st.textVar[k]=(st.textVar[k]||0)+1;delete st.text[k];save();el.value=textOf(k);
+    el.style.transition="background .6s";el.style.background="#fff6d6";setTimeout(()=>el.style.background="",900);
+    toast(el.value===before?"Already up to date with your latest results":"Rewritten from your latest results (new wording)")});
 }
-$("#bRegen").onclick=()=>{st.text={};save();renderTexts();toast("All sections rewritten from results")};
+$("#bRegen").onclick=()=>{st.textVar=st.textVar||{};TEXTS.forEach(([k])=>st.textVar[k]=(st.textVar[k]||0)+1);st.text={};save();renderTexts();toast("All sections rewritten from your latest results")};
 
 /* ---------------- report model (shared by PDF and Word) ---------------- */
 function model(){
